@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccountMenu } from '../components/AccountMenu';
 import { MyPeople } from '../components/MyPeople';
-import { Avatar, DemoBanner, ErrorNote, GlobalNav, Logo, Spinner, useToast } from '../components/ui';
+import { EmojiAvatar } from '../components/Fun';
+import { DemoBanner, ErrorNote, GlobalNav, Logo, Spinner, useToast } from '../components/ui';
 import { useAuth } from '../lib/auth';
 import { fmtDateTime, friendlyError } from '../lib/format';
 import { phoneError, normPhone } from '../lib/helpdesk';
@@ -61,7 +62,7 @@ export function Inbox() {
                 const p = pingOf(n.pingId);
                 return (
                   <li key={n.id} className={n.read ? '' : 'unread'}>
-                    <Avatar id={n.fromUid} name={n.fromName} photo={n.fromPhoto} size={44} />
+                    <EmojiAvatar id={n.fromUid} photo={n.fromPhoto || undefined} size={44} />
                     <div className="grow">
                       {n.type === 'ping'
                         ? <><b>Someone wants to meet you!</b><span>{n.fromName} would love to connect with you at {n.eventTitle}.</span>{n.message && <q>{n.message}</q>}</>

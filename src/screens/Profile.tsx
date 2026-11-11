@@ -6,17 +6,19 @@ import { useEffect, useState } from 'react';
 import { deleteMyAccount } from '../lib/account';
 import { friendlyError } from '../lib/format';
 import { AccountMenu } from '../components/AccountMenu';
-import { ProfileCard } from '../components/ProfileCard';
+import { ProfileDetails, ProfileHero } from '../components/ProfileCard';
+import { CountUp, PeopleStack, Reveal } from '../components/Fun';
+import { badges, level } from '../lib/persona';
 import { DemoBanner, ErrorNote, GlobalNav, Icon, LoadError, Logo, Modal, Spinner, useToast } from '../components/ui';
 import type { AppUser } from '../lib/types';
 import { useAuth } from '../lib/auth';
 import { useCol, useDoc } from '../lib/live';
 import { useMode } from '../lib/mode';
-import { completion, type PublicProfile } from '../lib/profile';
+import { completion, ensureProfile, type PublicProfile } from '../lib/profile';
 import type { CertificateDoc, MembershipDoc } from '../lib/types';
 import { SavedList } from './Saved';
 import { useSwipes } from '../lib/saved';
-import { MyPeople, usePings } from '../components/MyPeople';
+import { usePings } from '../components/MyPeople';
 
 export function Profile() {
   const { user, loading } = useAuth();
@@ -30,6 +32,8 @@ export function Profile() {
   const pings = usePings(user?.uid);
   const certs = useCol<CertificateDoc>(user ? 'certificates' : null, user ? [['uid', user.uid]] : []);
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/profile'); }, [loading, user, nav]);
+  // If the profile record is missing (first visit on a new device, or it was removed), create it instead of waiting.
+  useEffect(() => { if (user && !prof.loading && !prof.error && !prof.data) ensureProfile(user).catch(() => {}); }, [user, prof.loading, prof.error, prof.data]);
   if (loading || !user) return <div className="center"><Spinner /></div>;
 
   const p = prof.data;
@@ -45,38 +49,88 @@ export function Profile() {
     } catch { /* closed the share sheet */ }
   };
 
+  const activity = { events: mine.data.length, saved, people: pings.people, certificates: certs.data.length, profile: done?.percent ?? 0 };
+  const lv = level(activity);
+  const got = badges(activity);
+  const friends = pings.connections.map((x) => (x.fromUid === user.uid
+    ? { uid: x.toUid, name: x.toName, photo: x.toPhoto || undefined, sub: x.eventTitle }
+    : { uid: x.fromUid, name: x.fromName, photo: x.fromPhoto || undefined, sub: x.eventTitle }))
+    .filter((f, i, all) => all.findIndex((g) => g.uid === f.uid) === i);
+  const tiles = [
+    { label: 'Events joined', n: activity.events, emoji: '🎟️', tone: 'lime', href: '/' },
+    { label: 'Saved events', n: saved, emoji: '🔖', tone: 'pink', href: '#saved' },
+    { label: 'Connected people', n: pings.people, emoji: '🤝', tone: 'violet', href: '/people' },
+    { label: 'Pending requests', n: pings.incoming.length, emoji: '📬', tone: 'sun', href: '/people?tab=incoming' },
+  ];
+
   return (
     <div className="dash">
       <DemoBanner />
       <header className="top"><Logo /><AccountMenu photo={p?.photo} /></header>
-      <main className="dash-main">
+      <main className="dash-main fun">
         {prof.error ? <LoadError /> : !p ? <Spinner label="Setting up your profile" /> : (
-          <ProfileCard p={p}>
-            <span className="pid">Profile ID · {p.profileId}</span>
-            <div className="row-center">
-              <Link className="btn btn-primary btn-sm" href="/profile/edit">Edit profile</Link>
-              <button className="btn btn-ghost btn-sm" onClick={share}><Icon name="external" size={16} /> Share</button>
+          <ProfileHero p={p}>
+            <div className="ph-actions">
+              <Link className="btn btn-ink" href="/profile/edit">Edit profile</Link>
+              <button className="btn btn-outline" onClick={share}><Icon name="external" size={16} /> Share</button>
             </div>
-            <p className="pcard-vis">{p.visibility === 'public' ? 'Visible to people signed in to Gather. Your email and phone stay private.' : 'Hidden: only you can see this profile.'}</p>
-          </ProfileCard>
+            <p className="ph-vis"><span className="ph-id">ID · {p.profileId}</span> {p.visibility === 'public' ? 'Visible to people signed in to Gather. Email and phone stay private.' : 'Hidden: only you can see this profile.'}</p>
+          </ProfileHero>
         )}
 
         {done && done.percent < 100 && (
-          <Link href="/profile/edit" className="complete card">
-            <div className="row-between"><b>Profile {done.percent}% complete</b><Icon name="arrow" size={18} /></div>
-            <div className="progress-track light"><i style={{ width: `${done.percent}%` }} /></div>
-            <small>Add: {done.missing.slice(0, 4).join(', ')}{done.missing.length > 4 ? '…' : ''}</small>
-          </Link>
+          <Reveal as={Link} href="/profile/edit" className="pnudge">
+            <span className="pnudge-emoji" aria-hidden="true">🚀</span>
+            <span className="grow">
+              <b>Your profile is {done.percent}% done</b>
+              <small>Add {done.missing.slice(0, 3).join(', ').toLowerCase()}{done.missing.length > 3 ? ' and more' : ''}</small>
+              <span className="pbar"><i style={{ width: `${done.percent}%` }} /></span>
+            </span>
+            <Icon name="arrow" size={18} />
+          </Reveal>
         )}
 
-        <dl className="me-stats wide">
-          <div><dt>Events joined</dt><dd>{mine.data.length}</dd></div>
-          <div><dt>Saved events</dt><dd>{saved}</dd></div>
-          <div><dt>Connected people</dt><dd>{pings.loading ? '…' : pings.people}</dd></div>
-          <div><dt>Pending requests</dt><dd>{pings.loading ? '…' : pings.incoming.length}</dd></div>
-        </dl>
+        <div className="sbento">
+          {tiles.map((t, i) => (
+            <Reveal key={t.label} as={Link} href={t.href} delay={i * 70} className={`sbento-tile t-${t.tone}`}>
+              <span className="sbento-emoji" aria-hidden="true">{t.emoji}</span>
+              <b className="sbento-n">{pings.loading && i > 1 ? '…' : <CountUp value={t.n} />}</b>
+              <span className="sbento-label">{t.label}</span>
+            </Reveal>
+          ))}
+        </div>
 
-        <MyPeople user={user} />
+        <Reveal as="section" className="level" aria-labelledby="lv-title">
+          <div className="level-top">
+            <span className="level-badge" aria-hidden="true">{lv.n}</span>
+            <div className="grow">
+              <small>Level {lv.n} · {lv.points} points</small>
+              <h2 id="lv-title">{lv.name}</h2>
+            </div>
+          </div>
+          <div className="pbar on-dark" role="progressbar" aria-valuenow={lv.progress} aria-valuemin={0} aria-valuemax={100} aria-label="Progress to the next level"><i style={{ width: `${lv.progress}%` }} /></div>
+          <small className="level-next">{lv.next ? `${lv.next.need} points to ${lv.next.name}. Join events, connect with people and fill in your profile.` : 'Top level reached. You’re a Gather legend.'}</small>
+          <ul className="badges" aria-label="Badges">
+            {got.map((b) => (
+              <li key={b.id} className={b.got ? 'got' : ''} title={b.got ? b.title : `Locked: ${b.hint}`}>
+                <span className="badge-emoji" aria-hidden="true">{b.got ? b.emoji : '🔒'}</span>
+                <b>{b.title}</b>
+                <small>{b.got ? 'Unlocked' : b.hint}</small>
+              </li>
+            ))}
+          </ul>
+        </Reveal>
+
+        <Reveal as="section" className="people-peek">
+          <div className="row-between">
+            <div><small>My people</small><h2>{pings.people ? `${pings.people} ${pings.people === 1 ? 'connection' : 'connections'}` : 'No connections yet'}</h2></div>
+            <Link className="btn btn-white btn-sm" href="/people">See all <Icon name="arrow" size={16} /></Link>
+          </div>
+          {friends.length ? <PeopleStack people={friends} /> : <p className="people-peek-empty">Open an event, go to People and send a Meet Ping. 👋</p>}
+          {pings.incoming.length > 0 && <Link href="/people?tab=incoming" className="people-peek-req"><span aria-hidden="true">📬</span>{pings.incoming.length} {pings.incoming.length === 1 ? 'request is' : 'requests are'} waiting for you</Link>}
+        </Reveal>
+
+        {p && <ProfileDetails p={p} />}
 
         {canOrganise && (
           <section className="mode-card card">
@@ -91,8 +145,8 @@ export function Profile() {
         )}
 
         <Link href="/speaker" className="mode-card card speaker-entry">
-          <div><b>I’m a speaker</b><small>Turn it on with your event’s speaker code. Same account, no separate login. See feedback on your talks and run Pulse sessions.</small></div>
-          <Icon name="mic" size={22} />
+          <div className="grow"><b className="with-emoji"><span aria-hidden="true">🎤</span> I’m a speaker</b><small>Turn it on with your event’s speaker code. Same account, no separate login. See feedback on your talks and run Pulse sessions.</small></div>
+          <Icon name="arrow" size={20} />
         </Link>
 
         {certs.data.length > 0 && <>

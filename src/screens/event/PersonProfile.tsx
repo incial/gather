@@ -4,7 +4,8 @@ import { ChevronLeft, Globe, Link2, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { MeetButton, useEventPings } from '../../components/MeetPing';
-import { Avatar, Empty, LinkedinIcon, Spinner } from '../../components/ui';
+import { Empty, LinkedinIcon, Spinner } from '../../components/ui';
+import { EmojiAvatar } from '../../components/Fun';
 import { useAuth } from '../../lib/auth';
 import { webUrl } from '../../lib/links';
 import { useDoc } from '../../lib/live';
@@ -49,7 +50,7 @@ export function PersonProfile() {
       <article className="pp card">
         <div className={`pp-cover a-${event.color}`} aria-hidden="true" />
         <div className="pp-id">
-          <Avatar id={uid} name={name} photo={photo} size={112} />
+          <EmojiAvatar id={uid} photo={photo || undefined} size={112} />
           <h1>{name}{uid === me.uid && <span className="you">You</span>}</h1>
           <span className={`role-chip${speaker ? ' speaker' : ''}`}>{role} at {event.title}</span>
           {p?.headline && <p className="pp-headline">{p.headline}</p>}

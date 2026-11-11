@@ -46,13 +46,14 @@ export function GlobalNav() {
     { href: '/', label: 'My events', icon: 'home' },
     { href: '/explore', label: 'Explore', icon: 'compass' },
     { href: '/join', label: 'Join', icon: 'scan' },
+    { href: '/people', label: 'People', icon: 'people' },
     { href: '/pulse', label: 'Pulse', icon: 'sparkle' },
     { href: '/profile', label: 'Profile', icon: 'speakers' },
   ] as const;
   return (
     <nav className="global-nav" aria-label="Main">
       {items.map((i) => (
-        <Link key={i.href} href={i.href} className={pathname === i.href ? 'on' : ''} aria-current={pathname === i.href ? 'page' : undefined}>
+        <Link key={i.href} href={i.href} className={pathname === i.href ? 'on' : ''} aria-current={pathname === i.href ? 'page' : undefined} aria-label={i.label}>
           <Icon name={i.icon} size={21} /><span>{i.label}</span>
         </Link>
       ))}

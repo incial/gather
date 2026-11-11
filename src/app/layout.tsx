@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import '@fontsource-variable/geist';
+import '@fontsource-variable/plus-jakarta-sans';
 import './globals.css';
 import { Providers } from './providers';
 

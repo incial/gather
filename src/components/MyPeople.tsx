@@ -8,7 +8,8 @@ import { useCol } from '../lib/live';
 import { answerPing, withdrawPing, type PingDoc } from '../lib/meetping';
 import type { AppUser } from '../lib/types';
 import { Composer } from './MeetPing';
-import { Avatar, Empty, Spinner, useToast } from './ui';
+import { Empty, Spinner, useToast } from './ui';
+import { EmojiAvatar } from './Fun';
 
 type Tab = 'connections' | 'incoming' | 'sent';
 const STATUS: Record<PingDoc['status'], string> = { pending: 'Pending', accepted: 'Accepted', declined: 'Declined', cancelled: 'Cancelled' };
@@ -41,10 +42,10 @@ export function PeopleSummary({ uid }: { uid: string }) {
   return <p className="mp-summary"><b>{p.people}</b> Connected {p.people === 1 ? 'Person' : 'People'} · <b>{p.incoming.length}</b> Pending {p.incoming.length === 1 ? 'Request' : 'Requests'}</p>;
 }
 
-export function MyPeople({ user, focus }: { user: AppUser; focus?: string }) {
+export function MyPeople({ user, focus, initialTab }: { user: AppUser; focus?: string; initialTab?: Tab }) {
   const p = usePings(user.uid);
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('connections');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'connections');
   const [busy, setBusy] = useState('');
   const [again, setAgain] = useState<PingDoc | null>(null);
   const me = { uid: user.uid, name: user.name, photo: user.photo };
@@ -75,9 +76,9 @@ export function MyPeople({ user, focus }: { user: AppUser; focus?: string }) {
         {!p.loading && <span className="mp-summary"><b>{p.people}</b> connected · <b>{p.incoming.length}</b> pending</span>}
       </div>
       <div className="seg mp-tabs" role="tablist" aria-label="My People">
-        {([['connections', 'My Connections'], ['incoming', 'Incoming Requests'], ['sent', 'Sent Requests']] as [Tab, string][]).map(([k, l]) => (
+        {([['connections', 'My', 'Connections'], ['incoming', 'Incoming', 'Requests'], ['sent', 'Sent', 'Requests']] as [Tab, string, string][]).map(([k, a, b]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
-            {l} {k !== 'sent' && lists[k].length > 0 && <span className="count-badge">{k === 'connections' ? p.people : lists[k].length}</span>}
+            {k === 'connections' ? <><span className="long">{a} </span>{b}</> : <>{a}<span className="long"> {b}</span></>} {k !== 'sent' && lists[k].length > 0 && <span className="count-badge">{k === 'connections' ? p.people : lists[k].length}</span>}
           </button>
         ))}
       </div>
@@ -92,7 +93,7 @@ export function MyPeople({ user, focus }: { user: AppUser; focus?: string }) {
             return (
               <li key={x.id} id={`req-${x.id}`} className={`card${focus === x.id ? ' focused' : ''}`}>
                 <Link href={`/e/${x.eventId}/people/${o.uid}`} className="mp-who" aria-label={`Open ${o.name}’s profile`}>
-                  <Avatar id={o.uid} name={o.name} photo={o.photo} size={48} />
+                  <EmojiAvatar id={o.uid} photo={o.photo || undefined} size={50} />
                   <span className="grow">
                     <b>{o.name}</b>
                     <small className="muted">{o.role || 'Attendee'} · {x.eventTitle}</small>

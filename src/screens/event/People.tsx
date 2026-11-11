@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MeetButton, useEventPings } from '../../components/MeetPing';
-import { Avatar, Empty, LoadError, Spinner } from '../../components/ui';
+import { Empty, LoadError, Spinner } from '../../components/ui';
+import { EmojiAvatar } from '../../components/Fun';
 import { useAuth } from '../../lib/auth';
 import { backend } from '../../lib/backend';
 import { useCount } from '../../lib/live';
@@ -67,7 +68,7 @@ export function People() {
             {shownSpeakers.map((s) => (
               <li key={s.id} className="person card">
                 <Link href={`/e/${event.id}/speakers/${s.id}`} className="person-main" aria-label={`View ${s.name}’s profile`}>
-                  <Avatar id={s.id} name={s.name} photo={s.photo} size={52} />
+                  <EmojiAvatar id={s.uid || s.id} photo={s.photo || undefined} size={52} />
                   <div className="grow">
                     <b>{s.name}{s.uid === me.uid && <span className="you">You</span>}</b>
                     <span className="role-chip speaker">{s.featured ? 'Featured speaker' : s.category && s.category !== 'regular' ? CATEGORIES[s.category] : 'Speaker'}</span>
@@ -95,7 +96,7 @@ export function People() {
                   {shownPeople.map((p) => (
                     <li key={p.id} className="person card">
                       <Link href={`/e/${event.id}/people/${p.uid}`} className="person-main" aria-label={`View ${p.name}’s profile`}>
-                        <Avatar id={p.id} name={p.name} photo={p.photo || undefined} size={52} />
+                        <EmojiAvatar id={p.uid || p.id} photo={p.photo || undefined} size={52} />
                         <div className="grow">
                           <b>{p.name}{p.uid === me.uid && <span className="you">You</span>}</b>
                           <span className="role-chip">Attendee</span>

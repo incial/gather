@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useRef } from 'react';
-import { Avatar, confetti, Empty, Icon, LinkedinIcon, useToast } from '../../components/ui';
+import { confetti, Empty, Icon, LinkedinIcon, useToast } from '../../components/ui';
+import { EmojiAvatar } from '../../components/Fun';
 import { connect } from '../../lib/api';
 import { downloadBlob } from '../../lib/csv';
 import { fmtDay, fmtTime, friendlyError, hue } from '../../lib/format';
@@ -31,7 +32,7 @@ export function Speakers() {
           <Link key={s.id} href={`/e/${event.id}/speakers/${s.id}`} className="speaker-card">
             <span className={`speaker-cover a-${hue(s.id)}`} aria-hidden="true" />
             {mine.has(s.id) && <span className="sticker" title="Connected"><Icon name="check" size={15} /></span>}
-            <Avatar id={s.id} name={s.name} photo={s.photo} size={84} />
+            <EmojiAvatar id={s.uid || s.id} photo={s.photo || undefined} size={84} />
             <h3>{s.name}</h3>
             <p>{s.role}</p>
             {s.topic && <span className="pill">{s.topic}</span>}
@@ -89,7 +90,7 @@ export function SpeakerDetail() {
       <aside className="profile-card">
         <div className={`profile-cover a-${hue(speaker.id)}`} aria-hidden="true" />
         <div className="profile-id">
-          <span className="profile-photo"><Avatar id={speaker.id} name={speaker.name} photo={speaker.photo} size={124} /></span>
+          <span className="profile-photo"><EmojiAvatar id={speaker.uid || speaker.id} photo={speaker.photo || undefined} size={124} /></span>
           <h1>{speaker.name}</h1>
           <p className="profile-role">{[speaker.role, speaker.organisation].filter(Boolean).join(' · ')}</p>
           {tags.length > 0 && <div className="tags">{tags.map((t) => <span key={t}>{t}</span>)}</div>}

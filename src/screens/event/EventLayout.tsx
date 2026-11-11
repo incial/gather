@@ -72,7 +72,7 @@ export function EventLayout({ children }: { children: ReactNode }) {
         <aside className="side">
           <Logo />
           <Link href="/" className="side-back"><Icon name="back" size={16} /> All events</Link>
-          <Link href="/inbox" className="side-back">Meet Pings inbox</Link>
+          <Link href="/people" className="side-back"><Icon name="people" size={16} /> My people</Link>
           <div className="side-event"><b>{event.data.title}</b><small>{event.data.venue}</small></div>
           <nav aria-label="Event sections">
             {SIDE.map((t) => {
