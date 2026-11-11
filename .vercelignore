@@ -1,0 +1,8 @@
+.env.local
+.env.local.*
+node_modules
+.next
+*.log
+rules-tests
+firestore-debug.log
+.vercel-old-gather

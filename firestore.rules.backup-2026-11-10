@@ -1,0 +1,162 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function myEmail() { return request.auth.token.email; }
+
+    // Organisers are listed by email in the top-level `organisers` collection.
+    // A verified email is required so nobody can claim an address they don't own.
+    function isOrganiser() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/organisers/$(myEmail()));
+    }
+    function eventDoc(e) { return get(/databases/$(database)/documents/events/$(e)).data; }
+    function isAttendee(e) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/events/$(e)/attendees/$(request.auth.uid));
+    }
+    function isMe(uid) { return signedIn() && request.auth.uid == uid; }
+
+    match /organisers/{email} {
+      allow get: if signedIn() && myEmail() == email;
+      allow list, write: if isOrganiser();
+    }
+
+    // Each person's own data: joined events, Explore swipes and saved profile.
+    // Each person's profile (name, email, Google photo), private to them.
+    match /users/{uid} {
+      allow read, write: if isMe(uid);
+    }
+
+    match /users/{uid}/{rest=**} {
+      allow read, write: if isMe(uid);
+    }
+
+    match /events/{e} {
+      allow read: if resource.data.published == true || isOrganiser();
+      allow write: if isOrganiser();
+
+      match /sessions/{s} {
+        allow read: if eventDoc(e).published == true || isOrganiser();
+        allow write: if isOrganiser();
+      }
+
+      // Speaker records include contact details, so attendees only.
+      match /speakers/{s} {
+        allow read: if isAttendee(e) || isOrganiser();
+        allow write: if isOrganiser();
+      }
+
+      // Wi-Fi details: joined attendees only, so they can't sit on the public event doc.
+      match /private/{d} {
+        allow read: if isAttendee(e) || isOrganiser();
+        allow write: if isOrganiser();
+      }
+
+      // The People list. Only these fields are allowed, so email and phone can never end up here.
+      match /directory/{uid} {
+        allow read: if isAttendee(e) || isOrganiser();
+        allow create, update: if isMe(uid)
+          && existsAfter(/databases/$(database)/documents/events/$(e)/attendees/$(uid))
+          && request.resource.data.uid == uid
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'institution', 'department', 'designation', 'photo']);
+        allow delete: if isMe(uid) || isOrganiser();
+      }
+
+      // Who saved this event in Explore.
+      match /saved/{uid} {
+        allow read: if isMe(uid) || isOrganiser();
+        allow create, update: if isMe(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.email == myEmail()
+          && eventDoc(e).published == true;
+        allow delete: if isMe(uid) || isOrganiser();
+      }
+
+      // Rotating check-in keys. Attendees can never read these; the attendance
+      // rule below compares against them on the server.
+      match /sessionKeys/{s} {
+        allow read, write: if isOrganiser();
+      }
+
+      match /preregistered/{email} {
+        allow get: if isOrganiser() || (signedIn() && myEmail() == email);
+        allow list, write: if isOrganiser();
+      }
+
+      match /attendees/{uid} {
+        allow read: if isMe(uid) || isOrganiser();
+        allow create: if isOrganiser() || (
+          isMe(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.email == myEmail()
+          && (eventDoc(e).registration == 'open'
+              || exists(/databases/$(database)/documents/events/$(e)/preregistered/$(myEmail())))
+        );
+        allow update: if isOrganiser() || (
+          isMe(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.joinedAt == resource.data.joinedAt
+          && request.resource.data.source == resource.data.source
+        );
+        allow delete: if isOrganiser();
+      }
+
+      match /attendance/{id} {
+        function keyIsLive() {
+          let k = get(/databases/$(database)/documents/events/$(e)/sessionKeys/$(request.resource.data.sessionId)).data;
+          return k.open == true
+            && request.time < k.expiresAt
+            && request.resource.data.key.size() == 6
+            && (request.resource.data.key == k.key || request.resource.data.key == k.prev);
+        }
+        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create: if isOrganiser() || (
+          isAttendee(e)
+          && request.resource.data.uid == request.auth.uid
+          && id == request.resource.data.sessionId + '_' + request.auth.uid
+          && request.resource.data.method == 'qr'
+          && request.resource.data.at == request.time
+          && keyIsLive()
+        );
+        allow update, delete: if isOrganiser();
+      }
+
+      match /feedback/{uid} {
+        allow read: if isMe(uid) || isOrganiser();
+        allow create, update: if isOrganiser() || (
+          isMe(uid) && isAttendee(e)
+          && eventDoc(e).feedbackOpen == true
+          && request.resource.data.uid == uid
+        );
+        allow delete: if isOrganiser();
+      }
+
+      // One rating per person per session, only where the organiser left feedback on.
+      match /sessionFeedback/{id} {
+        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create, update: if isAttendee(e)
+          && request.resource.data.uid == request.auth.uid
+          && id == request.resource.data.sessionId + '_' + request.auth.uid
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+          && get(/databases/$(database)/documents/events/$(e)/sessions/$(request.resource.data.sessionId)).data.get('feedbackOn', true) == true;
+        allow delete: if isOrganiser();
+      }
+
+      match /connections/{id} {
+        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create, update: if isAttendee(e)
+          && request.resource.data.uid == request.auth.uid
+          && id == request.auth.uid + '_' + request.resource.data.speakerId;
+        allow delete: if isOrganiser();
+      }
+    }
+  }
+}

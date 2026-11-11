@@ -1,0 +1,588 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    // Lower-cased, the same way the app stores emails (organisers, invite lists, saved events),
+    // so accounts whose Google email has capital letters aren't refused.
+    function myEmail() { return request.auth.token.email.lower(); }
+
+    // Organisers are listed by email in the top-level `organisers` collection.
+    // A verified email is required so nobody can claim an address they don't own.
+    function isOrganiser() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && (exists(/databases/$(database)/documents/organisers/$(myEmail())) || isSuper());
+    }
+    // Super admins (God view) can see and manage everything on the platform.
+    function isSuper() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/superAdmins/$(myEmail()));
+    }
+    // A Google account, not a guest (anonymous) session.
+    function notGuest() { return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
+    function eventDoc(e) { return get(/databases/$(database)/documents/events/$(e)).data; }
+    function isAttendee(e) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/events/$(e)/attendees/$(request.auth.uid));
+    }
+    function isMe(uid) { return signedIn() && request.auth.uid == uid; }
+    // Event-specific speaker role on the same account (events/{e}/roles/{uid}).
+    function rolePath(e) { return /databases/$(database)/documents/events/$(e)/roles/$(request.auth.uid); }
+    function isSpeaker(e) { return signedIn() && exists(rolePath(e)) && get(rolePath(e)).data.active == true; }
+    function speakerCanPulse(e) { return isSpeaker(e) && get(rolePath(e)).data.pulse == true; }
+
+    match /organisers/{email} {
+      allow get: if signedIn() && myEmail() == email;
+      allow list, write: if isOrganiser();
+    }
+
+    match /superAdmins/{email} {
+      allow get: if (signedIn() && myEmail() == email) || isSuper();
+      allow list, write: if isSuper();
+    }
+
+    // Each person's own data: joined events, Explore swipes and saved profile.
+    // Each person's profile (name, email, Google photo), private to them.
+    match /users/{uid} {
+      allow read: if isMe(uid) || isSuper();
+      allow write: if isMe(uid);
+    }
+
+    // Public profiles. Phone and email are never stored here (they live in users/{uid}).
+    // Hidden profiles are readable only by their owner.
+    match /profiles/{uid} {
+      function validProfile() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['profileId', 'name', 'photo', 'photoSource', 'headline', 'bio', 'organisation', 'designation',
+                                 'education', 'skills', 'interests', 'location', 'linkedin', 'website', 'portfolio', 'links',
+                                 'visibility', 'updatedAt'])
+          && d.profileId is string && d.profileId.size() >= 6 && d.profileId.size() <= 20
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 80
+          && d.photo is string && d.photo.size() <= 200000
+          && d.visibility in ['public', 'private']
+          && (!('bio' in d) || (d.bio is string && d.bio.size() <= 1200))
+          && (!('headline' in d) || (d.headline is string && d.headline.size() <= 120))
+          && (!('skills' in d) || (d.skills is list && d.skills.size() <= 15))
+          && (!('interests' in d) || (d.interests is list && d.interests.size() <= 15))
+          && (!('links' in d) || (d.links is list && d.links.size() <= 8));
+      }
+      allow get: if isMe(uid) || (signedIn() && resource.data.visibility == 'public');
+      allow list: if signedIn() && resource.data.visibility == 'public';
+      allow create: if isMe(uid) && validProfile();
+      // The profile ID never changes once created, so shared links keep working.
+      allow update: if isMe(uid) && validProfile() && request.resource.data.profileId == resource.data.profileId;
+      allow delete: if isMe(uid);
+    }
+
+    match /users/{uid}/{rest=**} {
+      allow read, write: if isMe(uid);
+    }
+    // When an organiser deletes an event, they remove each attendee's copy of it too (delete only).
+    match /users/{uid}/events/{e} { allow delete: if isOrganiser(); }
+    match /users/{uid}/swipes/{e} { allow delete: if isOrganiser(); }
+    match /users/{uid}/speaking/{e} { allow delete: if isOrganiser(); }
+
+    // Meet Pings: pings/{eventId}_{from}_{to}. The ID allows one request per pair per event.
+    match /pings/{pid} {
+      function attendeeOf(ev, u) { return exists(/databases/$(database)/documents/events/$(ev)/attendees/$(u)); }
+      allow get: if signedIn() && (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isOrganiser());
+      allow list: if signedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isOrganiser());
+      allow create: if notGuest()
+        && request.resource.data.keys().hasOnly(['eventId', 'eventTitle', 'fromUid', 'fromName', 'fromPhoto', 'toUid', 'toName', 'toPhoto', 'fromRole', 'toRole', 'message', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.get('fromRole', '') is string && request.resource.data.get('fromRole', '').size() <= 20
+        && request.resource.data.get('toRole', '') is string && request.resource.data.get('toRole', '').size() <= 20
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string && request.resource.data.toUid != request.auth.uid
+        && pid == request.resource.data.eventId + '_' + request.auth.uid + '_' + request.resource.data.toUid
+        // Both people must be registered at that event (speakers are registered too).
+        && attendeeOf(request.resource.data.eventId, request.auth.uid)
+        && attendeeOf(request.resource.data.eventId, request.resource.data.toUid)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+        && request.resource.data.message is string && request.resource.data.message.size() > 0 && request.resource.data.message.size() <= 300
+        && request.resource.data.fromName is string && request.resource.data.fromName.size() <= 80
+        && request.resource.data.toName is string && request.resource.data.toName.size() <= 80
+        && request.resource.data.fromPhoto is string && request.resource.data.fromPhoto.size() <= 600
+        && request.resource.data.toPhoto is string && request.resource.data.toPhoto.size() <= 600
+        && request.resource.data.eventTitle is string && request.resource.data.eventTitle.size() <= 120;
+      allow update: if signedIn() && request.resource.data.updatedAt == request.time && (
+        // Only the recipient answers, once.
+        (resource.data.toUid == request.auth.uid && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && request.resource.data.status in ['accepted', 'declined'])
+        // The sender cancels an unanswered request (kept in their history)…
+        || (resource.data.fromUid == request.auth.uid && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && request.resource.data.status == 'cancelled')
+        // …and may send a cancelled one again, with a new message.
+        || (resource.data.fromUid == request.auth.uid && resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'message'])
+          && request.resource.data.status == 'pending'
+          && request.resource.data.message is string && request.resource.data.message.size() > 0 && request.resource.data.message.size() <= 300)
+      );
+      // Organisers remove an event's pings when deleting the event.
+      allow delete: if isOrganiser();
+    }
+
+    // Notifications are written by the person whose action caused them, read only by the recipient.
+    match /users/{uid}/notifications/{nid} {
+      function pingPath(id) { return /databases/$(database)/documents/pings/$(id); }
+      allow create: if notGuest() && uid != request.auth.uid
+        && request.resource.data.keys().hasOnly(['type', 'pingId', 'eventId', 'eventTitle', 'fromUid', 'fromName', 'fromPhoto', 'message', 'read', 'at'])
+        && request.resource.data.fromUid == request.auth.uid && request.resource.data.read == false && request.resource.data.at == request.time
+        && (
+          // A new Meet Ping, written together with the ping itself (so never twice).
+          (request.resource.data.type == 'ping' && nid == request.resource.data.pingId
+            && !exists(pingPath(nid)) && getAfter(pingPath(nid)).data.fromUid == request.auth.uid && getAfter(pingPath(nid)).data.toUid == uid)
+          // The recipient accepted: tell the sender, together with the acceptance.
+          || (request.resource.data.type == 'accepted' && nid == request.resource.data.pingId + '_ok'
+            && get(pingPath(request.resource.data.pingId)).data.status == 'pending'
+            && getAfter(pingPath(request.resource.data.pingId)).data.status == 'accepted'
+            && getAfter(pingPath(request.resource.data.pingId)).data.toUid == request.auth.uid
+            && getAfter(pingPath(request.resource.data.pingId)).data.fromUid == uid)
+        );
+    }
+
+    match /users/{uid}/notifications/{nid} {
+      // Re-sending a cancelled Meet Ping marks the recipient's notification unread again, nothing else.
+      allow update: if notGuest() && resource.data.fromUid == request.auth.uid && resource.data.type == 'ping'
+        && get(/databases/$(database)/documents/pings/$(nid)).data.status == 'cancelled'
+        && getAfter(/databases/$(database)/documents/pings/$(nid)).data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'at', 'message'])
+        && request.resource.data.read == false && request.resource.data.at == request.time;
+    }
+
+    // WhatsApp message IDs, used only by the server (Admin SDK bypasses these rules).
+    match /waMessages/{id} { allow read, write: if false; }
+
+    // The event's shared speaker code: looked up only by its exact value, never listed.
+    match /speakerCodes/{code} {
+      allow get: if signedIn();
+      allow list, delete: if isOrganiser();
+      allow create: if isOrganiser() && code.matches('^[A-Z0-9]{10}$')
+        && request.resource.data.revoked == false && request.resource.data.common == true;
+      allow update: if isOrganiser();
+    }
+
+    // Issued certificates. Anyone with the (long, random) ID can verify one; only organisers issue them.
+    match /certificates/{id} {
+      allow get: if true;
+      allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow write: if isOrganiser();
+    }
+
+    match /events/{e} {
+      // Private events (linkAccess) open with their link but are never listed.
+      // A deleted event reads as missing (not as an error), so apps can tidy up.
+      allow get: if resource == null || resource.data.published == true || resource.data.get('linkAccess', false) == true || isOrganiser();
+      allow list: if resource.data.published == true || isOrganiser();
+      allow write: if isOrganiser();
+
+      match /sessions/{s} {
+        allow read: if eventDoc(e).published == true || eventDoc(e).get('linkAccess', false) == true || isOrganiser();
+        allow write: if isOrganiser();
+      }
+
+      // The full-size banner, read only on the event page.
+      match /media/{d} {
+        allow get: if eventDoc(e).published == true || eventDoc(e).get('linkAccess', false) == true || isAttendee(e) || isOrganiser();
+        allow list, write: if isOrganiser();
+      }
+
+      // Speaker records include contact details, so attendees only.
+      match /speakers/{s} {
+        function myNewRole() { return getAfter(/databases/$(database)/documents/events/$(e)/roles/$(request.auth.uid)).data; }
+        function becomingThisSpeaker() {
+          return existsAfter(/databases/$(database)/documents/events/$(e)/roles/$(request.auth.uid))
+            && myNewRole().speakerId == s && myNewRole().active == true;
+        }
+        function cleanSpeaker(d) {
+          return d.name is string && d.name.size() > 0 && d.name.size() <= 80
+            && d.get('photo', '') is string && d.get('photo', '').size() <= 200000
+            && d.get('bio', '') is string && d.get('bio', '').size() <= 1500;
+        }
+        allow read: if isAttendee(e) || isOrganiser() || isSpeaker(e);
+        allow write: if isOrganiser();
+        // Not on the organiser's list: a speaker adds themselves (profile ID = their account ID).
+        allow create: if isMe(s) && request.resource.data.uid == request.auth.uid && becomingThisSpeaker() && cleanSpeaker(request.resource.data)
+          && request.resource.data.get('pinned', false) == false && request.resource.data.get('featured', false) == false
+          && request.resource.data.get('category', 'regular') == 'regular';
+        allow update: if
+          // Linking a listed speaker to their account, only if nobody has linked it yet.
+          (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
+            && resource.data.get('uid', '') == '' && request.resource.data.uid == request.auth.uid && becomingThisSpeaker())
+          // A linked speaker editing their own public details (never order, category or contacts).
+          || (signedIn() && resource.data.get('uid', '') == request.auth.uid && isSpeaker(e)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bio', 'topic', 'linkedin', 'website', 'role', 'organisation'])
+            && cleanSpeaker(request.resource.data));
+      }
+
+      // Wi-Fi details: joined attendees only, so they can't sit on the public event doc.
+      match /private/{d} {
+        allow read: if isAttendee(e) || isOrganiser();
+        allow write: if isOrganiser();
+      }
+
+      // The People list. Only these fields are allowed, so email and phone can never end up here.
+      match /directory/{uid} {
+        allow read: if isAttendee(e) || isOrganiser();
+        allow create, update: if isMe(uid)
+          && existsAfter(/databases/$(database)/documents/events/$(e)/attendees/$(uid))
+          && request.resource.data.uid == uid
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'institution', 'department', 'designation', 'photo']);
+        allow delete: if isMe(uid) || isOrganiser();
+      }
+
+      // Who saved this event in Explore.
+      match /saved/{uid} {
+        allow read: if isMe(uid) || isOrganiser();
+        allow create, update: if isMe(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.email == myEmail()
+          && (eventDoc(e).published == true || eventDoc(e).get('linkAccess', false) == true);
+        allow delete: if isMe(uid) || isOrganiser();
+      }
+
+      // Rotating check-in keys. Attendees can never read these; the attendance
+      // rule below compares against them on the server.
+      match /sessionKeys/{s} {
+        allow read, write: if isOrganiser();
+      }
+
+      match /preregistered/{email} {
+        allow get: if isOrganiser() || (signedIn() && myEmail() == email);
+        allow list, write: if isOrganiser();
+      }
+
+      match /attendees/{uid} {
+        allow read: if isMe(uid) || isOrganiser();
+        function counterPath() { return /databases/$(database)/documents/events/$(e)/counters/attendees; }
+        function newSpeaker() { return existsAfter(/databases/$(database)/documents/events/$(e)/roles/$(uid)) && getAfter(/databases/$(database)/documents/events/$(e)/roles/$(uid)).data.active == true; }
+        // With a capacity, each self-registration must add exactly one to the counter (which can't pass the capacity).
+        function underCapacity() { return eventDoc(e).get('capacity', 0) == 0 || getAfter(counterPath()).data.n == get(counterPath()).data.n + 1; }
+        // Check-in time always comes from the server.
+        function checkInTimeOk() {
+          return request.resource.data.get('checkedIn', false) != true
+            || request.resource.data.get('checkedInAt', null) == request.time
+            || (resource != null && resource.data.get('checkedIn', false) == true && request.resource.data.get('checkedInAt', null) == resource.data.get('checkedInAt', null));
+        }
+        allow create: if (isOrganiser() && checkInTimeOk()) || (
+          isMe(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.email == myEmail()
+          && request.resource.data.get('checkedIn', false) == false
+          && (newSpeaker() || (
+            (eventDoc(e).registration == 'open' || exists(/databases/$(database)/documents/events/$(e)/preregistered/$(myEmail())))
+            && underCapacity()
+          ))
+        );
+        allow update: if (isOrganiser() && checkInTimeOk()) || (
+          isMe(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.joinedAt == resource.data.joinedAt
+          && request.resource.data.source == resource.data.source
+          // Attendees can't check themselves in, and their pass ID never changes once set.
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['checkedIn', 'checkedInAt', 'checkInMethod'])
+          && (!('regId' in resource.data) || request.resource.data.get('regId', '') == resource.data.regId)
+        );
+        allow delete: if isOrganiser();
+      }
+
+      match /attendance/{id} {
+        function keyIsLive() {
+          let k = get(/databases/$(database)/documents/events/$(e)/sessionKeys/$(request.resource.data.sessionId)).data;
+          return k.open == true
+            && request.time < k.expiresAt
+            && request.resource.data.key.size() == 6
+            && (request.resource.data.key == k.key || request.resource.data.key == k.prev);
+        }
+        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create: if isOrganiser() || (
+          isAttendee(e)
+          && request.resource.data.uid == request.auth.uid
+          && id == request.resource.data.sessionId + '_' + request.auth.uid
+          && request.resource.data.method == 'qr'
+          && request.resource.data.at == request.time
+          && keyIsLive()
+        );
+        allow update, delete: if isOrganiser();
+      }
+
+      match /feedback/{uid} {
+        allow read: if isMe(uid) || isOrganiser();
+        allow create, update: if isOrganiser() || (
+          isMe(uid) && isAttendee(e)
+          && eventDoc(e).feedbackOpen == true
+          && request.resource.data.uid == uid
+        );
+        allow delete: if isOrganiser();
+      }
+
+      // One rating per person per session, only where the organiser left feedback on.
+      match /sessionFeedback/{id} {
+        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create, update: if isAttendee(e)
+          && request.resource.data.uid == request.auth.uid
+          && id == request.resource.data.sessionId + '_' + request.auth.uid
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+          && get(/databases/$(database)/documents/events/$(e)/sessions/$(request.resource.data.sessionId)).data.get('feedbackOn', true) == true;
+        allow delete: if isOrganiser();
+      }
+
+      // Event assets: attendees read, organisers manage. Files sit in their own documents
+      // (read only on download) and must stay under about 700 KB.
+      match /assets/{a} {
+        allow read: if isAttendee(e) || isOrganiser();
+        allow write: if isOrganiser();
+      }
+      match /assetFiles/{a} {
+        allow get: if isAttendee(e) || isOrganiser();
+        allow list: if isOrganiser();
+        allow create, update: if isOrganiser()
+          && request.resource.data.keys().hasOnly(['data', 'mime', 'name'])
+          && request.resource.data.data is string && request.resource.data.data.size() <= 960000;
+        allow delete: if isOrganiser();
+      }
+
+      // Registration counter, used only when the event has a capacity.
+      match /counters/{d} {
+        allow get: if signedIn();
+        allow create, delete: if isOrganiser();
+        allow update: if isOrganiser() || (
+          signedIn()
+          && request.resource.data.keys().hasOnly(['n'])
+          && request.resource.data.n == resource.data.n + 1
+          && (eventDoc(e).get('capacity', 0) == 0 || request.resource.data.n <= eventDoc(e).capacity)
+          && existsAfter(/databases/$(database)/documents/events/$(e)/attendees/$(request.auth.uid))
+          && !exists(/databases/$(database)/documents/events/$(e)/attendees/$(request.auth.uid))
+        );
+      }
+
+      // Speaker roles. Created only with the event's current speaker code, and only for a
+      // speaker profile that is linked to this same account.
+      match /roles/{uid} {
+        function codeOk() {
+          let data = request.resource.data;
+          let c = get(/databases/$(database)/documents/speakerCodes/$(data.code)).data;
+          let sp = getAfter(/databases/$(database)/documents/events/$(e)/speakers/$(data.speakerId)).data;
+          return isMe(uid)
+            && data.keys().hasOnly(['uid', 'name', 'email', 'roles', 'speakerId', 'status', 'active', 'pulse', 'code', 'at'])
+            && data.uid == uid && data.email == myEmail() && data.roles == ['speaker'] && data.status == 'verified' && data.active == true
+            && data.at == request.time
+            && c.eventId == e && c.common == true && c.revoked == false && request.time < c.expiresAt
+            && data.pulse == c.pulse
+            && sp.get('uid', '') == request.auth.uid;
+        }
+        allow get: if isMe(uid) || isOrganiser();
+        allow list, delete: if isOrganiser();
+        allow create: if codeOk();
+        allow update: if isOrganiser() || codeOk();
+      }
+
+      // Attendee → speaker feedback. Anonymous feedback holds no name, photo or account ID,
+      // so speakers can't identify the writer even from raw data. Speakers can't send it.
+      match /speakerFeedback/{fid} {
+        function myRole() { return get(rolePath(e)).data; }
+        function ownerId() { return request.resource.data.speakerId + '_' + request.auth.uid; }
+        function ownerPath() { return /databases/$(database)/documents/events/$(e)/speakerFeedbackOwners/$(ownerId()); }
+        allow get, list: if isOrganiser() || (isSpeaker(e) && myRole().speakerId == resource.data.speakerId && resource.data.status in ['visible', 'reported']);
+        allow create: if signedIn() && isAttendee(e) && !isSpeaker(e)
+          && request.resource.data.keys().hasOnly(['speakerId', 'rating', 'text', 'anonymous', 'uid', 'name', 'photo', 'status', 'at'])
+          && exists(/databases/$(database)/documents/events/$(e)/speakers/$(request.resource.data.speakerId))
+          && request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+          && request.resource.data.text is string && request.resource.data.text.size() <= 1000
+          && request.resource.data.anonymous is bool
+          && request.resource.data.status == 'visible' && request.resource.data.at == request.time
+          && (request.resource.data.anonymous
+              ? (request.resource.data.uid == '' && request.resource.data.name == '' && request.resource.data.photo == '')
+              : (request.resource.data.uid == request.auth.uid && request.resource.data.name is string && request.resource.data.name.size() <= 80
+                 && request.resource.data.photo is string && request.resource.data.photo.size() <= 600))
+          && !exists(ownerPath()) && existsAfter(ownerPath()) && getAfter(ownerPath()).data.fid == fid;
+        allow update: if isOrganiser() || (
+          isSpeaker(e) && myRole().speakerId == resource.data.speakerId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && resource.data.status == 'visible' && request.resource.data.status == 'reported'
+        );
+        allow delete: if isOrganiser();
+      }
+      // Who wrote which feedback: the writer and organisers only. One per attendee per speaker.
+      match /speakerFeedbackOwners/{oid} {
+        allow get: if isOrganiser() || (signedIn() && oid.matches('^.+_' + request.auth.uid + '$'));
+        allow list, delete: if isOrganiser();
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['uid', 'speakerId', 'fid', 'at'])
+          && request.resource.data.uid == request.auth.uid
+          && oid == request.resource.data.speakerId + '_' + request.auth.uid
+          && request.resource.data.at == request.time
+          && getAfter(/databases/$(database)/documents/events/$(e)/speakerFeedback/$(request.resource.data.fid)).data.speakerId == request.resource.data.speakerId;
+      }
+
+      // Which certificate belongs to whom, for this event.
+      match /certIndex/{uid} {
+        allow get: if isMe(uid) || isOrganiser();
+        allow list, write: if isOrganiser();
+      }
+
+      match /connections/{id} {
+        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create, update: if isAttendee(e)
+          && request.resource.data.uid == request.auth.uid
+          && id == request.auth.uid + '_' + request.resource.data.speakerId;
+        allow delete: if isOrganiser();
+      }
+    }
+      // ---------- Gather Pulse ----------
+    // Join codes point to a presentation or survey. Anyone may look one up.
+    match /pulseCodes/{code} {
+      allow get: if true;
+      allow create: if notGuest() && code.matches('^[A-Z0-9]{6}$')
+        && request.resource.data.keys().hasOnly(['pid', 'ownerUid'])
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if notGuest() && (resource.data.ownerUid == request.auth.uid || isSuper());
+    }
+
+    match /pulse/{p} {
+      function pd() { return get(/databases/$(database)/documents/pulse/$(p)).data; }
+      // For writes in the same batch that creates the presentation, check it as it will be after the batch.
+      function owns() { return canManage(pd()) || canManage(getAfter(/databases/$(database)/documents/pulse/$(p)).data); }
+      function canManage(d) { return notGuest() && (d.ownerUid == request.auth.uid || (d.eventId != '' && (isOrganiser() || speakerCanPulse(d.eventId))) || isSuper()); }
+      function accessOk(d) {
+        return d.access == 'public' ? signedIn()
+          : d.access == 'signedIn' ? notGuest()
+          : d.eventId != '' && (isAttendee(d.eventId) || isOrganiser());
+      }
+      function canSee(d) { return d.status in ['live', 'published', 'closed'] && accessOk(d); }
+      // Locked (password) presentations: answers must carry the key of an existing vault document.
+      function unlocked(d, data) { return d.locked != true || (data.get('k', '') != '' && exists(/databases/$(database)/documents/pulse/$(p)/vault/$(data.k))); }
+      function validValue(v) { return (v is string && v.size() <= 500) || v is number || (v is list && v.size() <= 20); }
+      function anonOk(d, data) { return d.anonymous != true || data.name == ''; }
+
+      allow get: if canManage(resource.data) || canSee(resource.data);
+      allow list: if notGuest() && (resource.data.ownerUid == request.auth.uid || (resource.data.eventId != '' && (isOrganiser() || speakerCanPulse(resource.data.eventId))) || isSuper()
+        || (resource.data.status in ['live', 'published'] && resource.data.eventId != '' && isAttendee(resource.data.eventId)));
+      allow create: if notGuest()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == 'draft'
+        && request.resource.data.kind in ['presentation', 'survey']
+        && request.resource.data.access in ['public', 'signedIn', 'event']
+        && (request.resource.data.eventId == '' || isOrganiser() || speakerCanPulse(request.resource.data.eventId));
+      allow update: if canManage(resource.data)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.eventId == resource.data.eventId
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.status in ['draft', 'live', 'published', 'closed']
+        && request.resource.data.access in ['public', 'signedIn', 'event'];
+      allow delete: if canManage(resource.data);
+
+      // Quiz answers and other owner-only extras.
+      match /private/{d} { allow read: if canManage(pd()); allow write: if owns(); }
+      // Questions of a password-protected presentation, stored under the password's hash.
+      match /vault/{k} {
+        allow get: if canSee(pd()) || canManage(pd());
+        allow list: if canManage(pd());
+        allow write: if owns();
+      }
+      // The presenter's live controls and the results summary phones read.
+      match /live/{d} {
+        allow read: if canManage(pd()) || canSee(pd());
+        allow write: if owns();
+      }
+      // Response counter for surveys with a limit. Each submission adds exactly one.
+      match /counter/{d} {
+        allow get: if canManage(pd()) || canSee(pd());
+        allow create, delete: if owns();
+        allow update: if owns() || (
+          signedIn() && canSee(pd())
+          && request.resource.data.keys().hasOnly(['n'])
+          && request.resource.data.n == resource.data.n + 1
+          && (pd().survey.limit == 0 || request.resource.data.n <= pd().survey.limit)
+          && existsAfter(/databases/$(database)/documents/pulse/$(p)/submissions/$(request.auth.uid))
+          && !exists(/databases/$(database)/documents/pulse/$(p)/submissions/$(request.auth.uid))
+        );
+      }
+
+      // Live answers: one per person per slide, only while that slide is open.
+      match /responses/{rid} {
+        function st() { return get(/databases/$(database)/documents/pulse/$(p)/live/state).data; }
+        function answerOk() {
+          let d = pd();
+          let data = request.resource.data;
+          return signedIn() && canSee(d) && d.status == 'live' && unlocked(d, data)
+            && data.keys().hasOnly(['slideId', 'uid', 'name', 'value', 'at', 'k'])
+            && data.uid == request.auth.uid
+            && rid == data.slideId + '_' + request.auth.uid
+            && data.at == request.time
+            && data.name is string && data.name.size() <= 80 && anonOk(d, data)
+            && validValue(data.value)
+            && st().slideId == data.slideId && st().open == true && st().paused != true && st().ended != true
+            && (st().closesAt == null || request.time < st().closesAt);
+        }
+        allow get: if canManage(pd()) || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if canManage(pd());
+        allow create: if answerOk();
+        // People may change an answer while the slide is open, except quiz answers (deadline set).
+        allow update: if canManage(pd()) || (answerOk() && resource.data.uid == request.auth.uid && st().closesAt == null);
+        allow delete: if canManage(pd());
+      }
+
+      // Q&A: up to 5 questions per person; anyone in the session can upvote once.
+      match /qa/{qid} {
+        allow get: if canManage(pd()) || canSee(pd());
+        allow list: if canManage(pd()) || (canSee(pd()) && resource.data.hidden == false);
+        allow create: if signedIn() && canSee(pd()) && pd().status == 'live' && unlocked(pd(), request.resource.data)
+          && qid.matches('^' + request.auth.uid + '_[1-5]$')
+          && request.resource.data.keys().hasOnly(['slideId', 'uid', 'name', 'text', 'votes', 'voters', 'answered', 'hidden', 'at', 'k'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 280
+          && request.resource.data.name is string && request.resource.data.name.size() <= 80 && anonOk(pd(), request.resource.data)
+          && request.resource.data.votes == 0 && request.resource.data.voters.size() == 0
+          && request.resource.data.answered == false && request.resource.data.hidden == false
+          && request.resource.data.at == request.time;
+        allow update: if canManage(pd()) || (
+          signedIn() && canSee(pd())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'voters'])
+          && request.resource.data.votes == resource.data.votes + 1
+          && !(request.auth.uid in resource.data.voters)
+          && request.auth.uid != resource.data.uid
+          && request.resource.data.voters.hasAll(resource.data.voters)
+          && request.resource.data.voters.size() == resource.data.voters.size() + 1
+          && request.auth.uid in request.resource.data.voters
+        );
+        allow delete: if canManage(pd()) || (signedIn() && resource.data.uid == request.auth.uid);
+      }
+
+      // Survey submissions: one per person, while the survey is open and under its limit.
+      match /submissions/{uid} {
+        allow get: if canManage(pd()) || (signedIn() && request.auth.uid == uid);
+        allow list: if canManage(pd());
+        allow create: if signedIn() && request.auth.uid == uid && canSee(pd())
+          && pd().kind == 'survey' && pd().status == 'published' && unlocked(pd(), request.resource.data)
+          && (pd().survey.opensAtTs == null || request.time >= pd().survey.opensAtTs)
+          && (pd().survey.closesAtTs == null || request.time < pd().survey.closesAtTs)
+          && (pd().survey.limit == 0 || getAfter(/databases/$(database)/documents/pulse/$(p)/counter/main).data.n == get(/databases/$(database)/documents/pulse/$(p)/counter/main).data.n + 1)
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'answers', 'at', 'k'])
+          && request.resource.data.uid == uid
+          && request.resource.data.at == request.time
+          && request.resource.data.answers is map && request.resource.data.answers.size() <= 100
+          && request.resource.data.name is string && request.resource.data.name.size() <= 80
+          && (request.resource.data.email == '' || request.resource.data.email == myEmail())
+          && (pd().anonymous != true || (request.resource.data.name == '' && request.resource.data.email == ''));
+        allow delete: if canManage(pd());
+      }
+
+      // Who opened a survey, for completion rates.
+      match /starts/{uid} {
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow list, delete: if canManage(pd());
+        allow create: if signedIn() && request.auth.uid == uid && canSee(pd()) && request.resource.data.keys().hasOnly(['at']);
+      }
+    }
+  }
+}
