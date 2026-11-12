@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarDays, Copy, Crown, Link2, MapPin, Plus, Radio, ScanLine, Search, Settings2, Sparkles, Users } from 'lucide-react';
+import { CalendarDays, Copy, Crown, Link2, MapPin, Plus, Radio, ScanLine, Search, Settings2, Sparkles, Trash2, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, type FormEvent } from 'react';
@@ -14,6 +14,7 @@ import { FDP_EVENT } from '../../lib/programme';
 import { eventUrl } from '../../lib/qr';
 import type { EventDoc } from '../../lib/types';
 import { blankEvent, EventForm, visibilityOf, VISIBILITY_LABEL } from './EventForm';
+import { DeleteEventDialog } from './DeleteEvent';
 
 type Phase = 'live' | 'upcoming' | 'past';
 const phaseOf = (e: EventDoc, now: number): Phase => (Date.parse(e.endsAt) < now ? 'past' : Date.parse(e.startsAt) <= now ? 'live' : 'upcoming');
@@ -133,6 +134,7 @@ export function AdminHome() {
 function OrgEventCard({ e, phase }: { e: EventDoc; phase: Phase }) {
   const toast = useToast();
   const vis = visibilityOf(e);
+  const [deleting, setDeleting] = useState(false);
   return (
     <article className={`org-card a-${e.color}`}>
       <Link href={`/admin/e/${e.id}`} className="org-card-cover" aria-label={`Manage ${e.title}`}>
@@ -152,7 +154,9 @@ function OrgEventCard({ e, phase }: { e: EventDoc; phase: Phase }) {
           <Link className="btn btn-ghost btn-sm" href={`/admin/e/${e.id}/attendance`}><ScanLine size={15} /> Check-in</Link>
           <Link className="btn btn-ghost btn-sm" href={`/admin/e/${e.id}/activities`}><Sparkles size={15} /> Activities</Link>
           <button className="btn btn-ghost btn-sm" title="Copy the private link" onClick={() => navigator.clipboard.writeText(eventUrl(e.id)).then(() => toast(vis === 'draft' ? 'Link copied. It opens once the event is public or private.' : 'Private link copied'))}><Link2 size={15} /> Link</button>
+          <button className="btn btn-ghost btn-sm danger" onClick={() => setDeleting(true)} aria-label={`Delete ${e.title}`}><Trash2 size={15} /> Delete</button>
         </div>
+        {deleting && <DeleteEventDialog event={e} onClose={() => setDeleting(false)} onDeleted={() => setDeleting(false)} />}
         <small className="muted">Code {e.joinCode} <button className="link" onClick={() => navigator.clipboard.writeText(e.joinCode).then(() => toast('Code copied'))} aria-label="Copy join code"><Copy size={12} /></button></small>
       </div>
     </article>

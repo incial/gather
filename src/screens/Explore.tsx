@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Avatar, confetti, Empty, Icon, Spinner, useToast } from '../components/ui';
-import { quickJoin } from '../lib/api';
+import { forgetDeletedEvents, quickJoin } from '../lib/api';
 import { EVENT_TYPES, TYPE_ORDER, typeInfo, type EventType } from '../lib/eventTypes';
 import { swipe, useSwipes } from '../lib/saved';
 import { useAuth } from '../lib/auth';
@@ -144,6 +144,13 @@ export function Explore() {
   useEffect(() => {
     if (!published.loading && !swipes.loading && !reels.length && pool.length) { setGone([]); setLoops((n) => n + 1); }
   }, [published.loading, swipes.loading, reels.length, pool.length]);
+  // Saved or skipped events that no longer appear may have been deleted: tidy those away, once a session.
+  useEffect(() => {
+    if (!user || published.loading || swipes.loading) return;
+    const listed = new Set(published.data.map((e) => e.id));
+    const missing = swipes.all.map((s) => s.id).filter((id) => !listed.has(id));
+    if (missing.length) forgetDeletedEvents(user.uid, missing, 'swipes').catch(() => {});
+  }, [user, published.loading, published.data, swipes.loading, swipes.all]);
   const types = useMemo(() => TYPE_ORDER.filter((t) => published.data.some((e) => e.eventType === t && Date.parse(e.endsAt) > Date.now())), [published.data]);
   // The same count as the profile and the Saved page.
   const savedCount = swipes.saved.length;

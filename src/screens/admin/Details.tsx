@@ -7,7 +7,8 @@ import { Minus, Plus, Star } from 'lucide-react';
 import { syncCapacityCounter } from '../../lib/api';
 import { useState, type FormEvent } from 'react';
 import { ErrorNote, Field, useToast } from '../../components/ui';
-import { deleteEvent, saveEventInfo, updateEvent } from '../../lib/api';
+import { saveEventInfo, updateEvent } from '../../lib/api';
+import { DeleteEventDialog } from './DeleteEvent';
 import { friendlyError } from '../../lib/format';
 import { useAdmin } from './context';
 import { EventForm } from './EventForm';
@@ -16,10 +17,7 @@ export function Details() {
   const { event, info } = useAdmin();
   const toast = useToast();
   const nav = useRouter();
-  async function remove() {
-    if (window.prompt(`This deletes "${event.title}" and all its attendance, feedback and people. Download your CSVs first. Type DELETE to confirm.`) !== 'DELETE') return;
-    try { await deleteEvent(event.id); nav.push('/admin'); } catch (x) { toast(friendlyError(x), 'err'); }
-  }
+  const [deleting, setDeleting] = useState(false);
   return (
     <div className="narrow stack-lg">
       <h1>Event details</h1>
@@ -31,7 +29,8 @@ export function Details() {
       <section className="panel">
         <h2>Delete event</h2>
         <p className="muted">Permanently removes the event and all its data.</p>
-        <button className="btn btn-ghost btn-sm danger" onClick={remove}>Delete event</button>
+        <button className="btn btn-ghost btn-sm danger" onClick={() => setDeleting(true)}>Delete event</button>
+        {deleting && <DeleteEventDialog event={event} onClose={() => setDeleting(false)} onDeleted={() => nav.replace('/admin')} />}
       </section>
     </div>
   );

@@ -1690,3 +1690,4 @@ button.pl-present-qr small { font-size: 11px; opacity: .7; }
 .speaker-match small { color: var(--ink-2); }
 .speaker-match .error { flex-basis: 100%; }
 .sp-mine { border: 2px solid var(--lime) !important; background: #F7FFD6 !important; }
+.del-ev .plain-bullets { display: grid; gap: 4px; padding-left: 18px; list-style: disc; } .danger-btn { background: #C4260B !important; color: #fff !important; }

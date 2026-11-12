@@ -197,11 +197,13 @@ export const updateEvent = (id: string, patch: Partial<EventDoc>) =>
  * Hard delete: the event, everything under it, its certificates and Pulse activities, and each
  * attendee's copy in My events and Explore saves, so it disappears for everyone straight away.
  */
-export async function deleteEvent(id: string) {
+export async function deleteEvent(id: string, onStep?: (s: string) => void) {
   const subs = ['sessions', 'speakers', 'sessionKeys', 'preregistered', 'attendees', 'directory', 'private', 'attendance', 'feedback', 'connections', 'saved', 'sessionFeedback', 'assets', 'assetFiles', 'certIndex', 'media', 'roles', 'speakerFeedback', 'speakerFeedbackOwners', 'counters', 'announcements', 'checkinLog', 'speakerTries'];
   const ops: WriteOp[] = [];
   // Marks the event as being deleted, which also lets its check-in history be removed.
+  onStep?.('Starting…');
   await backend.write([{ type: 'set', path: `events/${id}`, merge: true, data: { deleting: true } }]);
+  onStep?.('Finding everything in this event…');
   ops.push({ type: 'delete', path: `speakerPins/${id}` });
   // People's own copies first, while the attendee and saved lists still exist.
   const [joined, savers] = await Promise.all([
@@ -215,8 +217,11 @@ export async function deleteEvent(id: string) {
   for (const s of new Set([...joined.map((a) => a.id), ...savers.map((x) => x.id)])) ops.push({ type: 'delete', path: `users/${s}/swipes/${id}` });
   const pulses = await backend.getCol<PulseDoc>('pulse', [['eventId', id]]).catch(() => []);
   // Meet Pings made at this event.
-  const pings = await backend.getCol<{ id: string }>('pings', [['eventId', id]]).catch(() => []);
+  const pings = await backend.getCol<{ id: string; fromUid: string; toUid: string }>('pings', [['eventId', id]]).catch(() => []);
   ops.push(...pings.map((p) => ({ type: 'delete' as const, path: `pings/${p.id}` })));
+  // …and the notifications they sent (the request to the recipient, the acceptance to the sender).
+  for (const p of pings) ops.push({ type: 'delete', path: `users/${p.toUid}/notifications/${p.id}` }, { type: 'delete', path: `users/${p.fromUid}/notifications/${p.id}_ok` });
+  if (pulses.length) onStep?.('Removing Pulse sessions…');
   for (const p of pulses) await deletePulse(p);
   for (const sub of subs) {
     const docs = await backend.getCol<{ id: string }>(`events/${id}/${sub}`);
@@ -226,6 +231,7 @@ export async function deleteEvent(id: string) {
   const certs = await backend.getCol<{ id: string }>('certificates', [['eventId', id]]);
   ops.push(...certs.map((c) => ({ type: 'delete' as const, path: `certificates/${c.id}` })));
   ops.push({ type: 'delete', path: `events/${id}` });
+  onStep?.(`Deleting ${ops.length} records…`);
   await backend.write(ops);
 }
 
@@ -344,8 +350,8 @@ export const removeOrganiser = (email: string) =>
  * Removes a person's copies of events that no longer exist (deleted before hard delete
  * existed, or while they were offline). Runs at most once per session per person.
  */
-export async function forgetDeletedEvents(uid: string, ids: string[]): Promise<string[]> {
-  const key = `gather-healed-${uid}`;
+export async function forgetDeletedEvents(uid: string, ids: string[], scope = 'events'): Promise<string[]> {
+  const key = `gather-healed-${scope}-${uid}`;
   try { if (sessionStorage.getItem(key)) return []; sessionStorage.setItem(key, '1'); } catch { /* private mode */ }
   const gone: string[] = [];
   await Promise.all(ids.map(async (id) => {

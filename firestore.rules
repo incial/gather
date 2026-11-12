@@ -186,6 +186,9 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/pings/$(nid)).data.status == 'pending'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'at', 'message'])
         && request.resource.data.read == false && request.resource.data.at == request.time;
+      // When an event is deleted, its Meet Ping notifications go too (only while the event is being deleted).
+      allow delete: if isOrganiser() && resource.data.get('eventId', '') != ''
+        && get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.get('deleting', false) == true;
     }
 
     // WhatsApp message IDs, used only by the server (Admin SDK bypasses these rules).
@@ -456,6 +459,8 @@ service cloud.firestore {
       // Registration counter, used only when the event has a capacity.
       match /counters/{d} {
         allow get: if signedIn();
+        // Organisers list them when deleting the event.
+        allow list: if isOrganiser();
         allow create, delete: if isOrganiser();
         allow update: if isOrganiser() || (
           signedIn()
