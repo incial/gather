@@ -1693,3 +1693,9 @@ button.pl-present-qr small { font-size: 11px; opacity: .7; }
 .del-ev .plain-bullets { display: grid; gap: 4px; padding-left: 18px; list-style: disc; } .danger-btn { background: #C4260B !important; color: #fff !important; }
 .pill-warn { background: #FEE4E2; color: #912018; }
 .pl { padding-bottom: 110px; } @media (min-width: 960px) { .pl { padding-bottom: 40px; } }
+/* Organiser top menu on phones: one line, scrolls sideways without a visible bar. */
+.org-nav { scrollbar-width: none; flex-wrap: nowrap; }
+.org-nav::-webkit-scrollbar { display: none; }
+.org-nav a { white-space: nowrap; flex: none; }
+.org-nav button { white-space: nowrap; flex: none; } @media (max-width: 700px) { .org-nav { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); padding-right: 32px; } }
+.del-ev p { display: block; } .del-ev p b { display: inline; }
