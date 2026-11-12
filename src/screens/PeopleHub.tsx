@@ -1,5 +1,6 @@
 'use client';
 
+import { useMyEvents } from '../lib/myEvents';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -8,8 +9,6 @@ import { CountUp, PeopleStack, Reveal } from '../components/Fun';
 import { MyPeople, usePings } from '../components/MyPeople';
 import { DemoBanner, GlobalNav, Icon, Logo, Spinner } from '../components/ui';
 import { useAuth } from '../lib/auth';
-import { useCol } from '../lib/live';
-import type { MembershipDoc } from '../lib/types';
 
 /** /people: everyone you've met through Gather, requests both ways, and a way into each event's People list. */
 export function PeopleHub() {
@@ -18,7 +17,7 @@ export function PeopleHub() {
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/people'); }, [loading, user, nav]);
   const [q] = useState(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search)));
   const pings = usePings(user?.uid);
-  const mine = useCol<MembershipDoc>(user ? `users/${user.uid}/events` : null);
+  const mine = useMyEvents(user?.uid);
   if (loading || !user) return <div className="center"><Spinner /></div>;
 
   const friends = pings.connections.map((x) => (x.fromUid === user.uid

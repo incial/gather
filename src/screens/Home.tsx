@@ -1,5 +1,6 @@
 'use client';
 
+import { useMyEvents } from '../lib/myEvents';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -8,8 +9,6 @@ import { DemoBanner, GlobalNav, Icon, LoadError, Logo, Spinner } from '../compon
 import { useMode } from '../lib/mode';
 import { useAuth } from '../lib/auth';
 import { fmtRange } from '../lib/format';
-import { useCol } from '../lib/live';
-import { forgetDeletedEvents } from '../lib/api';
 import type { MembershipDoc } from '../lib/types';
 import { Site } from './Site';
 
@@ -36,13 +35,7 @@ function MyEvents() {
   const nav = useRouter();
   useEffect(() => { if (mode === 'organiser') nav.replace('/admin'); }, [mode, nav]);
   const [splash, setSplash] = useState(false);
-  const mine = useCol<MembershipDoc>(`users/${user!.uid}/events`);
-  // Events an organiser deleted disappear from My events, even if they were deleted long ago.
-  useEffect(() => {
-    if (mine.loading || !mine.data.length) return;
-    const swipesToo = mine.data.map((m) => m.id);
-    forgetDeletedEvents(user!.uid, swipesToo).catch(() => {});
-  }, [mine.loading, mine.data, user]);
+  const mine = useMyEvents(user!.uid);
   const first = (user!.name || 'there').replace(/^(dr|prof|mr|ms|mrs)\.?\s+/i, '').split(' ')[0];
   const [now] = useState(() => Date.now());
   const sorted = useMemo(() => {

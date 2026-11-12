@@ -40,6 +40,8 @@ export interface EventDoc {
   expectedAttendees?: number;
   /** Maximum registrations, 0 or missing for no limit. Enforced by the security rules with a counter. */
   capacity?: number;
+  /** Set while the event is being deleted (stays set if a delete was interrupted). */
+  deleting?: boolean;
   /** Workshop, conference, hackathon… Older events have none. */
   eventType?: EventType;
   /** Answers to the questions for this event type (see eventTypes.ts). */

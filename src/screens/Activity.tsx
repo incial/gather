@@ -1,5 +1,6 @@
 'use client';
 
+import { useMyEvents } from '../lib/myEvents';
 import { Bell, ClipboardList, Megaphone, Radio, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -37,7 +38,7 @@ export function Activity() {
   const { canOrganise } = useMode();
   const nav = useRouter();
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/activity'); }, [loading, user, nav]);
-  const mine = useCol<MembershipDoc>(user ? `users/${user.uid}/events` : null);
+  const mine = useMyEvents(user?.uid);
   const speaking = useCol<SpeakingDoc>(user ? `users/${user.uid}/speaking` : null);
   const notes = useCol<NotificationDoc>(user ? `users/${user.uid}/notifications` : null);
   const [now] = useState(() => Date.now());

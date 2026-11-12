@@ -1,5 +1,6 @@
 'use client';
 
+import { useMyEvents } from '../lib/myEvents';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -15,7 +16,7 @@ import { useCol, useDoc } from '../lib/live';
 import { useMode } from '../lib/mode';
 import { completion, ensureProfile, type PublicProfile } from '../lib/profile';
 import { ensureUsername } from '../lib/username';
-import type { CertificateDoc, MembershipDoc } from '../lib/types';
+import type { CertificateDoc } from '../lib/types';
 import { SavedList } from './Saved';
 import { useSwipes } from '../lib/saved';
 import { usePings } from '../components/MyPeople';
@@ -27,7 +28,7 @@ export function Profile() {
   const toast = useToast();
   const prof = useDoc<PublicProfile>(user ? `profiles/${user.uid}` : null);
   const me = useDoc<{ phone?: string }>(user ? `users/${user.uid}/profile/me` : null);
-  const mine = useCol<MembershipDoc>(user ? `users/${user.uid}/events` : null);
+  const mine = useMyEvents(user?.uid);
   const swipes = useSwipes(user?.uid);
   const pings = usePings(user?.uid);
   const certs = useCol<CertificateDoc>(user ? 'certificates' : null, user ? [['uid', user.uid]] : []);

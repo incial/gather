@@ -143,6 +143,7 @@ function OrgEventCard({ e, phase }: { e: EventDoc; phase: Phase }) {
         <div className="org-pills">
           {phase === 'live' && <span className="pill pill-live"><Radio size={12} aria-hidden="true" /> Live</span>}
           <span className={`pill org-vis-${vis}`}>{VISIBILITY_LABEL[vis]}</span>
+          {e.deleting && <span className="pill pill-warn">Delete didn’t finish</span>}
         </div>
       </Link>
       <div className="org-card-body">

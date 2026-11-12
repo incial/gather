@@ -1,5 +1,6 @@
 'use client';
 
+import { useMyEvents } from '../lib/myEvents';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
@@ -9,9 +10,8 @@ import { EVENT_TYPES, TYPE_ORDER, typeInfo, type EventType } from '../lib/eventT
 import { swipe, useSwipes } from '../lib/saved';
 import { useAuth } from '../lib/auth';
 import { fmtRange, fmtTime, friendlyError } from '../lib/format';
-import { useCol } from '../lib/live';
 import { backend, type Where } from '../lib/backend';
-import type { EventDoc, MembershipDoc, SwipeDoc } from '../lib/types';
+import type { EventDoc, SwipeDoc } from '../lib/types';
 
 const THRESHOLD = 90;
 const FLY_MS = 420;
@@ -119,7 +119,7 @@ export function Explore() {
   const toast = useToast();
   const published = useOnce<EventDoc>('events', [['published', true]], 60);
   const swipes = useSwipes(user?.uid);
-  const mine = useCol<MembershipDoc>(user ? `users/${user.uid}/events` : null);
+  const mine = useMyEvents(user?.uid);
   const savedIcon = useRef<HTMLAnchorElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [gone, setGone] = useState<string[]>([]);

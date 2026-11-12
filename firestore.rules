@@ -602,7 +602,12 @@ service cloud.firestore {
       allow create: if notGuest() && code.matches('^[A-Z0-9]{6}$')
         && request.resource.data.keys().hasOnly(['pid', 'ownerUid'])
         && request.resource.data.ownerUid == request.auth.uid;
-      allow delete: if notGuest() && (resource.data.ownerUid == request.auth.uid || isSuper());
+      // Removed together with its session by whoever may delete that session (owner, organisers,
+      // the event's speakers). A missing code record never blocks deleting a session.
+      function codePulse() { return /databases/$(database)/documents/pulse/$(resource.data.pid); }
+      allow delete: if notGuest() && (resource == null
+        || resource.data.ownerUid == request.auth.uid || isSuper() || isOrganiser()
+        || (exists(codePulse()) && get(codePulse()).data.get('eventId', '') != '' && speakerCanPulse(get(codePulse()).data.eventId)));
     }
 
     match /pulse/{p} {
@@ -655,6 +660,7 @@ service cloud.firestore {
       // Response counter for surveys with a limit. Each submission adds exactly one.
       match /counter/{d} {
         allow get: if canManage(pd()) || canSee(pd());
+        allow list: if canManage(pd());
         allow create, delete: if owns();
         allow update: if owns() || (
           signedIn() && canSee(pd())

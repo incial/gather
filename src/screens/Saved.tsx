@@ -1,5 +1,6 @@
 'use client';
 
+import { useMyEvents } from '../lib/myEvents';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -9,15 +10,14 @@ import { quickJoin } from '../lib/api';
 import { tidySaved, unsave, useSwipes } from '../lib/saved';
 import { useAuth } from '../lib/auth';
 import { fmtRange, friendlyError } from '../lib/format';
-import { useCol } from '../lib/live';
-import type { AppUser, EventDoc, MembershipDoc, SwipeDoc } from '../lib/types';
+import type { AppUser, EventDoc, SwipeDoc } from '../lib/types';
 import { JoinForm } from './event/Landing';
 
 /** Saved events, with poster, date and place, open and unsave. Used on the Profile and Saved pages. */
 export function SavedList({ user }: { user: AppUser }) {
   const toast = useToast();
   const swipes = useSwipes(user.uid);
-  const mine = useCol<MembershipDoc>(`users/${user.uid}/events`);
+  const mine = useMyEvents(user?.uid);
   const [busy, setBusy] = useState('');
   const [needsForm, setNeedsForm] = useState<EventDoc | null>(null);
   const [hidden, setHidden] = useState<string[]>([]);

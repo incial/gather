@@ -1,5 +1,6 @@
 'use client';
 
+import { useMyEvents } from '../lib/myEvents';
 import { BarChart3, ClipboardList, Flag, Pencil, Play, Presentation, Star, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -14,7 +15,7 @@ import { becomeSpeaker, cleanPin, findMyAssignment, feedbackStats, saveMySpeaker
 import { findEventByCode } from '../lib/api';
 import { backend } from '../lib/backend';
 import type { PublicProfile } from '../lib/profile';
-import type { EventDoc, MembershipDoc, SpeakerDoc, SpeakerFeedbackDoc, SpeakingDoc } from '../lib/types';
+import type { EventDoc, SpeakerDoc, SpeakerFeedbackDoc, SpeakingDoc } from '../lib/types';
 import { STATUS_LABEL } from './pulse/PulseHome';
 
 /** /speaker: activate with a code, then see feedback and Pulse sessions for each event you speak at. */
@@ -49,7 +50,7 @@ function ActivateCard() {
   const { user } = useAuth();
   const toast = useToast();
   const speakingNow = useCol<SpeakingDoc>(user ? `users/${user.uid}/speaking` : null);
-  const joined = useCol<MembershipDoc>(user ? `users/${user.uid}/events` : null);
+  const joined = useMyEvents(user?.uid);
   const [on, setOn] = useState(false);
   const [ev, setEv] = useState<EventDoc | null>(null);
   const [eventCode, setEventCode] = useState('');

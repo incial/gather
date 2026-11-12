@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AccountMenu } from '../../components/AccountMenu';
-import { DemoBanner, Empty, Spinner, useToast } from '../../components/ui';
+import { DemoBanner, Empty, Spinner, useToast, GlobalNav } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { backend } from '../../lib/backend';
 import { fmtDateTime, friendlyError } from '../../lib/format';
@@ -104,6 +104,7 @@ export function PulseHome() {
         )}
       </main>
       {share && <ShareModal p={share} onClose={() => setShare(null)} />}
+      <GlobalNav />
     </div>
   );
 }
@@ -162,6 +163,7 @@ function PulseTakePart() {
         </section>
         <p className="pl-note">Running a session? Pulse is for organisers and speakers. <Link href="/speaker">Enter your speaker code</Link> to get access.</p>
       </main>
+      <GlobalNav />
     </div>
   );
 }
