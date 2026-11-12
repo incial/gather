@@ -1684,3 +1684,9 @@ button.pl-present-qr small { font-size: 11px; opacity: .7; }
 .join-more-card .grow { display: grid; }
 .join-more-card small { color: var(--ink-2); }
 @media (hover: hover) { .join-more-card:hover { transform: translateY(-2px); } }
+.speaker-match { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px; border: 2px solid var(--lime); }
+.speaker-match > span:first-child { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 14px; background: #C8FF00; font-size: 22px; }
+.speaker-match .grow { display: grid; gap: 2px; min-width: 200px; }
+.speaker-match small { color: var(--ink-2); }
+.speaker-match .error { flex-basis: 100%; }
+.sp-mine { border: 2px solid var(--lime) !important; background: #F7FFD6 !important; }

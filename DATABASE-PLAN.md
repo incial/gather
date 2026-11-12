@@ -178,3 +178,15 @@ All additions; existing accounts, events, passes and old speaker codes keep work
 - **Announcements:** `events/{e}/announcements/{id}` (organisers post/delete; attendees, speakers read).
 - **Pulse:** creating sessions now needs an organiser, or a speaker for that event. Existing items stay editable by their owners.
 - **Not built (agreed for after 16 Nov):** per-event organisers (Main Organiser, invites, revoke).
+
+## Proposed (12 Nov 2026): one identity, speaker assignments linked by verified email
+
+Inspection of the live database found **no duplicate users or duplicate speaker entries** (FDP: 13 listed speakers, 2 linked roles, each on its own account; codex hack: 1 listed speaker, no roles). No migration needed.
+
+Mapping to the requested structure: Users = `users/{uid}` + `profiles/{uid}`; EventMembers = `events/{e}/attendees/{uid}` + `events/{e}/roles/{uid}`; SpeakerAssignments = `events/{e}/speakers/{id}` with `uid` (empty until claimed); Attendance = one `attendees/{uid}` record per event; Connections/pings use account IDs.
+
+Changes:
+- Speaker entries store `emailLower`. A signed-in person with that verified email can find their own entry (only theirs).
+- Claiming a listed entry that has an email requires that verified email (closes impersonation with the code). Entries without an email can still be claimed with the code, first come only.
+- New `EMAIL` role path: listed with your verified email = speaker role on your account, no code; joins the event if needed.
+- One speaker entry per person per event: a role can only be re-made after removal, and only with the code (removal isn't undone by email).

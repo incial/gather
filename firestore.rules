@@ -248,15 +248,22 @@ service cloud.firestore {
             && d.get('bio', '') is string && d.get('bio', '').size() <= 1500;
         }
         allow read: if isAttendee(e) || isOrganiser() || isSpeaker(e);
+        // Anyone signed in can find the speaker entry the organiser made with their own verified email,
+        // so a listed speaker can claim it before joining the event.
+        allow list, get: if signedIn() && request.auth.token.email_verified == true
+          && resource.data.get('emailLower', '') != '' && resource.data.get('emailLower', '') == myEmail();
         allow write: if isOrganiser();
         // Not on the organiser's list: a speaker adds themselves (profile ID = their account ID).
         allow create: if isMe(s) && request.resource.data.uid == request.auth.uid && becomingThisSpeaker() && cleanSpeaker(request.resource.data)
           && request.resource.data.get('pinned', false) == false && request.resource.data.get('featured', false) == false
           && request.resource.data.get('category', 'regular') == 'regular';
         allow update: if
-          // Linking a listed speaker to their account, only if nobody has linked it yet.
+          // Linking a listed speaker to their account, only if nobody has linked it yet. If the organiser
+          // gave an email, only the account with that verified email can claim it (no impersonation).
           (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
-            && resource.data.get('uid', '') == '' && request.resource.data.uid == request.auth.uid && becomingThisSpeaker())
+            && resource.data.get('uid', '') == '' && request.resource.data.uid == request.auth.uid && becomingThisSpeaker()
+            && (resource.data.get('emailLower', '') == ''
+              || (request.auth.token.email_verified == true && resource.data.emailLower == myEmail())))
           // A linked speaker editing their own public details (never order, category or contacts).
           || (signedIn() && resource.data.get('uid', '') == request.auth.uid && isSpeaker(e)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bio', 'topic', 'linkedin', 'website', 'role', 'organisation'])
@@ -497,6 +504,18 @@ service cloud.firestore {
             && data.pulse == true
             && sp.get('uid', '') == request.auth.uid;
         }
+        // Listed by the organiser with this person's verified email: they become that speaker without a code.
+        function emailOk() {
+          let data = request.resource.data;
+          let sp = getAfter(/databases/$(database)/documents/events/$(e)/speakers/$(data.speakerId)).data;
+          return isMe(uid)
+            && data.keys().hasOnly(['uid', 'name', 'email', 'roles', 'speakerId', 'status', 'active', 'pulse', 'code', 'at'])
+            && data.uid == uid && data.email == myEmail() && data.roles == ['speaker'] && data.status == 'verified' && data.active == true
+            && data.at == request.time && data.code == 'EMAIL' && data.pulse == true
+            && request.auth.token.email_verified == true
+            && sp.get('emailLower', '') != '' && sp.get('emailLower', '') == myEmail()
+            && sp.get('uid', '') == request.auth.uid;
+        }
         // Older ten-character codes, kept so existing codes and speakers keep working.
         function codeOk() {
           let data = request.resource.data;
@@ -512,8 +531,10 @@ service cloud.firestore {
         }
         allow get: if isMe(uid) || isOrganiser();
         allow list, delete: if isOrganiser();
-        allow create: if pinOk() || codeOk();
-        allow update: if isOrganiser() || pinOk() || codeOk();
+        allow create: if pinOk() || codeOk() || emailOk();
+        // One speaker entry per person per event: the role can only be re-made after it was removed,
+        // and then only with the speaker code (an organiser's removal isn't undone by email matching).
+        allow update: if isOrganiser() || (resource.data.get('active', false) == false && (pinOk() || codeOk()));
       }
 
       // Attendee → speaker feedback. Anonymous feedback holds no name, photo or account ID,

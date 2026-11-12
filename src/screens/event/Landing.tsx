@@ -10,7 +10,8 @@ import { useAuth } from '../../lib/auth';
 import { backend } from '../../lib/backend';
 import type { PublicProfile } from '../../lib/profile';
 import { fmtRange, fmtTime, friendlyError } from '../../lib/format';
-import type { EventDoc, PreregDoc } from '../../lib/types';
+import type { EventDoc, PreregDoc, SpeakerDoc } from '../../lib/types';
+import { claimByEmail, findMyAssignment } from '../../lib/speakers';
 import { EventBanner, EventVideo } from '../../components/EventMedia';
 import { SaveEventButton } from '../../components/SaveEventButton';
 
@@ -39,6 +40,7 @@ export function Landing({ event }: { event: EventDoc }) {
       </section>
 
       <section className="landing-body">
+        {user && <SpeakerMatch event={event} />}
         {user && <div className="landing-save"><SaveEventButton event={event} /></div>}
         {event.description && <p className="lede">{event.description}</p>}
         <TypeDetails event={event} />
@@ -125,5 +127,32 @@ export function JoinForm({ event, onDone }: { event: EventDoc; onDone?: () => vo
       <ErrorNote text={err} />
       <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Joining…' : 'Join event'}</button>
     </form>
+  );
+}
+
+/**
+ * The organiser listed this person as a speaker with their verified email: one tap joins the event
+ * as that speaker, on this same account. Nothing shows for everyone else.
+ */
+function SpeakerMatch({ event }: { event: EventDoc }) {
+  const { user } = useAuth();
+  const [sp, setSp] = useState<SpeakerDoc | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => { findMyAssignment(user!, event.id).then((x) => setSp(x && !x.uid ? x : null)).catch(() => {}); }, [user, event.id]);
+  if (!sp) return null;
+  async function go() {
+    setBusy(true); setErr('');
+    const r = await claimByEmail(user!, event, sp!);
+    setBusy(false);
+    if (r.ok) confetti(); else setErr(r.reason);
+  }
+  return (
+    <div className="speaker-match card">
+      <span aria-hidden="true">🎤</span>
+      <div className="grow"><b>You’re on the speaker list as {sp.name}</b><small>The organiser added you with {user!.email}. Join as a speaker with this account: no code needed.</small></div>
+      <button className="btn btn-primary btn-sm" disabled={busy} onClick={go}>{busy ? 'Joining…' : 'Join as speaker'}</button>
+      <ErrorNote text={err} />
+    </div>
   );
 }

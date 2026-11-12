@@ -10,7 +10,7 @@ import { useAuth } from '../lib/auth';
 import { fmtDate, fmtDateTime, friendlyError } from '../lib/format';
 import { useCol, useDoc } from '../lib/live';
 import type { PulseDoc } from '../lib/pulse/types';
-import { becomeSpeaker, cleanPin, feedbackStats, saveMySpeakerProfile, setFeedbackStatus, tryPin, verifiedTry, type OwnSpeakerProfile, type SpeakerGrant } from '../lib/speakers';
+import { becomeSpeaker, cleanPin, findMyAssignment, feedbackStats, saveMySpeakerProfile, setFeedbackStatus, tryPin, verifiedTry, type OwnSpeakerProfile, type SpeakerGrant } from '../lib/speakers';
 import { findEventByCode } from '../lib/api';
 import { backend } from '../lib/backend';
 import type { PublicProfile } from '../lib/profile';
@@ -114,6 +114,13 @@ function ActivateCard() {
     setOwn({ name: p?.name || user!.name, role: p?.designation || '', organisation: p?.organisation || '', topic: '', bio: p?.bio || '', photo: p?.photo || user!.photo || '', linkedin: p?.linkedin || '', website: p?.website || '' });
   }
   const listed = chk ? chk.event.lineup ?? [] : [];
+  // The organiser may have listed this person with their verified email: offer that entry first,
+  // so they never end up with a second speaker entry for the same person.
+  const [mine, setMine] = useState<SpeakerDoc | null>(null);
+  useEffect(() => {
+    if (!chk) { setMine(null); return; }
+    findMyAssignment(user!, chk.event.id).then((x) => setMine(x && !x.uid ? x : null)).catch(() => setMine(null));
+  }, [chk, user]);
 
   return (
     <section className="card sp-activate">
@@ -156,16 +163,21 @@ function ActivateCard() {
       {on && chk && !own && (
         <div className="stack">
           <b>Which speaker are you at {chk.event.title}?</b>
+          {mine && (
+            <button className="sp-pick-btn sp-mine" disabled={busy} onClick={() => finish({ speakerId: mine.id, name: mine.name })}>
+              <Avatar id={mine.id} name={mine.name} photo={mine.photo} size={40} /><span><b>That’s me: {mine.name}</b><small className="muted">The organiser listed you with {user!.email}</small></span>
+            </button>
+          )}
           {listed.length > 0 ? (
             <ul className="sp-pick">
-              {listed.map((l) => (
+              {listed.filter((l) => l.id !== mine?.id).map((l) => (
                 <li key={l.id}><button className="sp-pick-btn" disabled={busy} onClick={() => finish({ speakerId: l.id, name: l.name })}>
                   <Avatar id={l.id} name={l.name} photo={l.photo} size={40} /><span><b>{l.name}</b><small className="muted">{l.role}</small></span>
                 </button></li>
               ))}
             </ul>
           ) : <p className="muted">The organiser hasn’t listed speakers yet.</p>}
-          <button className="btn btn-ghost" disabled={busy} onClick={startOwn}>I’m not on the list: use my own profile</button>
+          {!mine && <button className="btn btn-ghost" disabled={busy} onClick={startOwn}>I’m not on the list: use my own profile</button>}
           <button className="link" onClick={() => { setChk(null); setEv(null); }}>Choose a different event</button>
         </div>
       )}

@@ -1,13 +1,14 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
-import { Avatar, DemoBanner, Empty, Icon, LoadError, Logo, Spinner } from '../../components/ui';
+import { Avatar, DemoBanner, Empty, Icon, LoadError, Logo, Spinner, useToast } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { useCol, useDoc } from '../../lib/live';
+import { backend } from '../../lib/backend';
 import type { AttendanceDoc, AttendeeDoc, ConnectionDoc, EventDoc, EventInfoDoc, FeedbackDoc, RoleDoc, SessionDoc, SessionFeedbackDoc, SpeakerDoc } from '../../lib/types';
-import { sortSpeakers } from '../../lib/speakers';
+import { claimByEmail, findMyAssignment, sortSpeakers } from '../../lib/speakers';
 import { EventCtx } from './context';
 import { FeedbackPrompt } from './FeedbackPrompt';
 import { Landing } from './Landing';
@@ -52,6 +53,26 @@ export function EventLayout({ children }: { children: ReactNode }) {
   const orderedSpeakers = useMemo(() => sortSpeakers(speakers.data), [speakers.data]);
 
   const sorted = useMemo(() => [...sessions.data].sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [sessions.data]);
+
+  // Listed by the organiser with this person's verified email? Link it to this same account once
+  // (no code, no second identity). Checked at most once per session per event.
+  const toast = useToast();
+  // Only for people who never had a speaker role here: someone an organiser removed stays removed.
+  const hadRole = !!role.data;
+  useEffect(() => {
+    if (!user || !joined || role.loading || hadRole || !event.data || !user.emailVerified) return;
+    const key = `gather-sp-match-${id}-${user.uid}`;
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch { /* private mode: check anyway */ }
+    const ev = event.data;
+    findMyAssignment(user, id).then(async (sp) => {
+      if (!sp || sp.uid) return;
+      // Read the role itself (not the screen's copy, which may still be loading): anyone who ever had
+      // a speaker role here, including someone an organiser removed, is never relinked automatically.
+      if (await backend.getDoc(`events/${id}/roles/${user.uid}`).catch(() => true)) return;
+      const r = await claimByEmail(user, ev, sp);
+      if (r.ok) toast(`You’re linked as speaker “${sp.name}” for ${ev.title}`);
+    }).catch(() => {});
+  }, [user, joined, role.loading, hadRole, event.data, id, toast]);
 
   if (authLoading || event.loading || me.loading) return <div className="center"><Spinner /></div>;
   if (event.error && !event.data && navigator.onLine === false) return <div className="center"><LoadError /></div>;

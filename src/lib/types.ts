@@ -125,6 +125,8 @@ export interface SpeakerDoc {
   bio: string;
   photo?: string;
   email: string;
+  /** Lower-case copy of email, used to match the speaker's own account. */
+  emailLower?: string;
   phone: string;
   linkedin: string;
   website: string;

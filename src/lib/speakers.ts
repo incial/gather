@@ -152,8 +152,25 @@ export async function becomeSpeaker(user: AppUser, chk: SpeakerGrant | Extract<C
     );
   }
   try { await backend.write(ops); }
-  catch { return { ok: false, reason: 'own' in choice ? 'That didn’t work. The organiser may have just changed the speaker code: enter the new one.' : 'That speaker profile is already linked to another account. Choose “I’m not on the list” or ask the organiser.' }; }
+  catch { return { ok: false, reason: 'own' in choice ? 'That didn’t work. The organiser may have just changed the speaker code: enter the new one.' : 'That speaker entry is already linked to another account, or it’s reserved for a different email address. Sign in with the email the organiser has for you, or ask the organiser.' }; }
   return { ok: true };
+}
+
+/* ---------- Matching organiser-listed speakers to accounts by verified email ---------- */
+
+/**
+ * The speaker entry the organiser created with this person's email, if any and not claimed by
+ * someone else. Only works with a verified email, and never by name.
+ */
+export async function findMyAssignment(user: AppUser, eventId: string): Promise<SpeakerDoc | null> {
+  if (!user.emailVerified || !user.email) return null;
+  const list = await backend.getCol<SpeakerDoc>(`events/${eventId}/speakers`, [['emailLower', user.email.toLowerCase()]]).catch(() => []);
+  return list.find((s) => !s.uid || s.uid === user.uid) ?? null;
+}
+
+/** Links that entry to this account and gives the event's speaker role (joining the event if needed). One account, no new identity. */
+export async function claimByEmail(user: AppUser, ev: EventDoc, sp: SpeakerDoc) {
+  return becomeSpeaker(user, { event: ev, code: 'EMAIL', pulse: true }, { speakerId: sp.id, name: sp.name });
 }
 
 /** A speaker updates their own public speaker details. */

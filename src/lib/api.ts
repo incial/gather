@@ -246,7 +246,8 @@ export async function saveSpeaker(eventId: string, s: SpeakerDoc, all: SpeakerDo
   const saved = { ...s, id };
   const next = s.id ? all.map((x) => (x.id === id ? saved : x)) : [...all, saved];
   await backend.write([
-    { type: 'set', path: `events/${eventId}/speakers/${id}`, data: strip(s) },
+    // emailLower lets the speaker's own verified account find and claim this entry.
+    { type: 'set', path: `events/${eventId}/speakers/${id}`, data: { ...strip(s), emailLower: (s.email ?? '').trim().toLowerCase() } },
     { type: 'set', path: `events/${eventId}`, data: { lineup: lineupOf(sortSpeakers(next)) }, merge: true },
   ]);
 }
