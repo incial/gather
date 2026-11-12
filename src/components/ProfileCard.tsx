@@ -29,6 +29,7 @@ export function ProfileHero({ p, children }: { p: PublicProfile; children?: Reac
       </div>
       <div className="ph-copy">
         <h1>{p.name}</h1>
+        {p.username && <p className="ph-handle">@{p.username}</p>}
         {p.headline && <p className="ph-headline">{p.headline}</p>}
         {line && <p className="ph-line">{line}</p>}
         {(p.location || p.education) && <p className="ph-meta">{p.location && <><Icon name="pin" size={14} /> {p.location}</>}{p.location && p.education && ' · '}{p.education}</p>}

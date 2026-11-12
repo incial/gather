@@ -8,12 +8,13 @@ import { checkFile, saveAsset } from '../../lib/assets';
 import { prepareBanner, removeBanner, saveBanner, videoEmbedUrl } from '../../lib/eventMedia';
 import { friendlyError, fromLocalInput, toLocalInput } from '../../lib/format';
 import type { Accent, EventDoc } from '../../lib/types';
+import { cleanDetails, EVENT_TYPES, TYPE_ORDER, typeInfo } from '../../lib/eventTypes';
 
-export type EventFields = Pick<EventDoc, 'title' | 'tagline' | 'description' | 'organiser' | 'venue' | 'startsAt' | 'endsAt' | 'published' | 'registration' | 'feedbackOpen' | 'color' | 'mapLink' | 'linkAccess' | 'videoUrl' | 'expectedAttendees' | 'capacity'>;
+export type EventFields = Pick<EventDoc, 'title' | 'tagline' | 'description' | 'organiser' | 'venue' | 'startsAt' | 'endsAt' | 'published' | 'registration' | 'feedbackOpen' | 'color' | 'mapLink' | 'linkAccess' | 'videoUrl' | 'expectedAttendees' | 'capacity' | 'eventType' | 'typeDetails'>;
 
 export const blankEvent = (): EventFields => ({
   title: '', tagline: '', description: '', organiser: '', venue: '', startsAt: '', endsAt: '',
-  published: false, registration: 'open', feedbackOpen: false, color: 'blue', mapLink: '', linkAccess: true, videoUrl: '', expectedAttendees: 0, capacity: 0,
+  published: false, registration: 'open', feedbackOpen: false, color: 'blue', mapLink: '', linkAccess: true, videoUrl: '', expectedAttendees: 0, capacity: 0, eventType: undefined, typeDetails: {},
 });
 
 const COLORS: Accent[] = ['blue', 'amber', 'violet', 'lime', 'rose'];
@@ -67,6 +68,8 @@ export function EventForm({ initial, eventId, bannerThumb, submitLabel, onSubmit
       const keys = Object.keys(blankEvent()) as (keyof EventFields)[];
       const clean = Object.fromEntries(keys.map((k) => [k, f[k]])) as unknown as EventFields;
       clean.videoUrl = f.videoUrl?.trim() ?? '';
+      if (f.eventType) { clean.eventType = f.eventType; clean.typeDetails = cleanDetails(f.eventType, f.typeDetails); }
+      else { delete clean.eventType; delete clean.typeDetails; }
       const id = (await onSubmit(clean)) || eventId;
       if (id) {
         if (banner) { setBusy('Uploading banner…'); await saveBanner(id, banner); }
@@ -80,8 +83,38 @@ export function EventForm({ initial, eventId, bannerThumb, submitLabel, onSubmit
   }
 
   const shownThumb = banner?.thumb ?? (dropBanner ? '' : bannerThumb ?? '');
+  const type = typeInfo(f.eventType);
+  const [picking, setPicking] = useState(!eventId && !initial.eventType);
+  const detail = (k: string) => (e: { target: { value: string } }) => setF({ ...f, typeDetails: { ...(f.typeDetails ?? {}), [k]: e.target.value } });
+
+  if (picking) {
+    return (
+      <div className="ev-form">
+        <fieldset className="ev-section">
+          <legend><span>1</span> What kind of event is it?</legend>
+          <p className="muted">We’ll only ask the questions that fit. You can change this later; nothing you’ve typed is lost.</p>
+          <div className="ev-types" role="radiogroup" aria-label="Event type">
+            {TYPE_ORDER.map((t) => (
+              <button type="button" key={t} role="radio" aria-checked={f.eventType === t} className={`ev-type${f.eventType === t ? ' on' : ''}`}
+                onClick={() => { setF({ ...f, eventType: t }); setPicking(false); }}>
+                <span className="ev-type-emoji" aria-hidden="true">{EVENT_TYPES[t].emoji}</span>
+                <b>{EVENT_TYPES[t].label}</b><small>{EVENT_TYPES[t].blurb}</small>
+              </button>
+            ))}
+          </div>
+          {eventId && <button type="button" className="link" onClick={() => setPicking(false)}>Back to the form</button>}
+        </fieldset>
+      </div>
+    );
+  }
+
   return (
     <form className="ev-form" onSubmit={submit}>
+      <div className="ev-type-bar">
+        {type ? <><span className="ev-type-emoji" aria-hidden="true">{type.emoji}</span><span className="grow"><small className="muted">Event type</small><b>{type.label}</b></span></>
+          : <span className="grow"><small className="muted">Event type</small><b>Not set</b></span>}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicking(true)}>{type ? 'Change' : 'Choose type'}</button>
+      </div>
       <fieldset className="ev-section">
         <legend><span>1</span> Basics</legend>
         <Field label="Event name"><input required maxLength={120} value={f.title} onChange={text('title')} /></Field>
@@ -91,10 +124,24 @@ export function EventForm({ initial, eventId, bannerThumb, submitLabel, onSubmit
           <Field label="Starts"><input required type="datetime-local" value={toLocalInput(f.startsAt)} onChange={(e) => setF({ ...f, startsAt: fromLocalInput(e.target.value) })} /></Field>
           <Field label="Ends"><input required type="datetime-local" value={toLocalInput(f.endsAt)} onChange={(e) => setF({ ...f, endsAt: fromLocalInput(e.target.value) })} /></Field>
         </div>
-        <Field label="Venue"><input required value={f.venue} onChange={text('venue')} /></Field>
+        <Field label={type?.online ? 'Online meeting details' : 'Venue'} hint={type?.online ? 'The meeting link or where to watch. Attendees see it on the event page.' : undefined}><input required value={f.venue} onChange={text('venue')} placeholder={type?.online ? 'meet.google.com/… or YouTube Live' : undefined} /></Field>
         <Field label="Map" hint="Paste a Google Maps link, or type the full address. Attendees get a map and directions."><input value={f.mapLink ?? ''} onChange={(e) => setF({ ...f, mapLink: e.target.value })} placeholder="maps.app.goo.gl/… or full address" /></Field>
         <Field label="About the event"><textarea rows={4} value={f.description} onChange={text('description')} /></Field>
       </fieldset>
+
+      {type && (
+        <fieldset className="ev-section">
+          <legend><span className="ev-type-emoji sm" aria-hidden="true">{type.emoji}</span> {type.label} details</legend>
+          <p className="muted">All optional. Fill in what helps people decide to come.</p>
+          {type.fields.map((fd) => (
+            <Field key={fd.key} label={fd.label}>
+              {fd.long
+                ? <textarea rows={2} maxLength={1000} value={f.typeDetails?.[fd.key] ?? ''} placeholder={fd.placeholder} onChange={detail(fd.key)} />
+                : <input maxLength={160} value={f.typeDetails?.[fd.key] ?? ''} placeholder={fd.placeholder} onChange={detail(fd.key)} />}
+            </Field>
+          ))}
+        </fieldset>
+      )}
 
       <fieldset className="ev-section">
         <legend><span>2</span> Banner and video</legend>

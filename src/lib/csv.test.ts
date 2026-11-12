@@ -35,6 +35,12 @@ describe('routeFromScan', () => {
     expect(routeFromScan(`${o}/e/abc/c/s1?k=ABC123`, o)).toBe('/e/abc/c/s1?k=ABC123');
     expect(routeFromScan(`${o}/e/abc/connect/sp1`, o)).toBe('/e/abc/connect/sp1');
     expect(routeFromScan(`${o}/join/NFDP26`, o)).toBe('/join/NFDP26');
+    // Private event links and Pulse links work from the scanner too.
+    expect(routeFromScan(`${o}/e/abc`, o)).toBe('/e/abc');
+    expect(routeFromScan(`${o}/pulse/join/ABC234`, o)).toBe('/pulse/join/ABC234');
+    expect(routeFromScan(`${o}/pulse/survey/p1`, o)).toBe('/pulse/survey/p1');
+    expect(routeFromScan(`${o}/speaker?event=abc`, o)).toBe('/speaker?event=abc');
+    expect(routeFromScan(`${o}/e/abc/admin/x`, o)).toBeNull();
   });
   it('rejects other sites, other routes and plain text', () => {
     expect(routeFromScan('https://evil.example/e/abc/c/s1', o)).toBeNull();

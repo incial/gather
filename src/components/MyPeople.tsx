@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { fmtDateTime, friendlyError } from '../lib/format';
 import { useCol } from '../lib/live';
-import { answerPing, withdrawPing, type PingDoc } from '../lib/meetping';
+import { answerPing, sharePhone, withdrawPing, type PingDoc } from '../lib/meetping';
+import { getMyProfile } from '../lib/api';
+import { backend } from '../lib/backend';
 import type { AppUser } from '../lib/types';
 import { Composer } from './MeetPing';
 import { Empty, Spinner, useToast } from './ui';
@@ -48,6 +50,7 @@ export function MyPeople({ user, focus, initialTab }: { user: AppUser; focus?: s
   const [tab, setTab] = useState<Tab>(initialTab ?? 'connections');
   const [busy, setBusy] = useState('');
   const [again, setAgain] = useState<PingDoc | null>(null);
+  const [myPhone, setMyPhone] = useState<string | null>(null);
   const me = { uid: user.uid, name: user.name, photo: user.photo };
 
   // Opening a notification brings you straight to its request.
@@ -102,7 +105,26 @@ export function MyPeople({ user, focus, initialTab }: { user: AppUser; focus?: s
                 </Link>
                 {tab !== 'connections' && x.message && <q className="mp-msg">{x.message}</q>}
                 <div className="mp-actions">
-                  {tab === 'connections' && <span className="meet-state connected"><Handshake size={15} aria-hidden="true" /> Connected</span>}
+                  {tab === 'connections' && <>
+                    <span className="meet-state connected"><Handshake size={15} aria-hidden="true" /> Connected</span>
+                    {(() => {
+                      const mine = x.fromUid === user.uid ? x.fromPhone : x.toPhone;
+                      const theirs = x.fromUid === user.uid ? x.toPhone : x.fromPhone;
+                      return <>
+                        {theirs && <a className="btn btn-ghost btn-sm" href={`tel:${theirs}`}><span aria-hidden="true">📞</span> {theirs}</a>}
+                        {mine
+                          ? <button className="link" disabled={busy === x.id} onClick={() => act(x, () => sharePhone(x, user.uid, ''), 'Your number is no longer shared')}>Stop sharing my number</button>
+                          : <button className="btn btn-ghost btn-sm" disabled={busy === x.id} onClick={async () => {
+                              // Saved profile first, then the phone from this event's registration.
+                              const phone = myPhone || (await getMyProfile(user.uid).catch(() => null))?.phone
+                                || (await backend.getDoc<{ phone?: string }>(`events/${x.eventId}/attendees/${user.uid}`).catch(() => null))?.phone || '';
+                              if (!phone) { toast('Add your phone number in Edit profile first.', 'err'); return; }
+                              setMyPhone(phone);
+                              act(x, () => sharePhone(x, user.uid, phone), `Your number is shared with ${o.name}`);
+                            }}><span aria-hidden="true">📞</span> Share my number</button>}
+                      </>;
+                    })()}
+                  </>}
                   {tab === 'incoming' && <>
                     <button className="btn btn-primary btn-sm" disabled={busy === x.id} onClick={() => act(x, () => answerPing(x, true, me), `You’re connected with ${o.name}`)}><Check size={15} /> Accept</button>
                     <button className="btn btn-ghost btn-sm" disabled={busy === x.id} onClick={() => act(x, () => answerPing(x, false, me), 'Request declined')}><X size={15} /> Decline</button>

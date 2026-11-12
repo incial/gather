@@ -86,7 +86,7 @@ export function Pass() {
 function EditProfile({ onClose }: { onClose: () => void }) {
   const { event, me } = useEventCtx();
   const toast = useToast();
-  const [f, setF] = useState<Profile>({ name: me.name, phone: me.phone, institution: me.institution, department: me.department, designation: me.designation });
+  const [f, setF] = useState<Profile>({ name: me.name, phone: me.phone, institution: me.institution, department: me.department, designation: me.designation, shareContact: !!me.shareContact });
   const [listed, setListed] = useState(me.listed !== false);
   const [err, setErr] = useState('');
   const set = (k: keyof Profile) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
@@ -103,7 +103,8 @@ function EditProfile({ onClose }: { onClose: () => void }) {
         <Field label="Institution"><input value={f.institution} onChange={set('institution')} /></Field>
         <Field label="Department"><input value={f.department} onChange={set('department')} /></Field>
         <Field label="Designation"><input value={f.designation} onChange={set('designation')} /></Field>
-        <label className="check"><input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} /><span><b>Show me in People</b><small>Other attendees see your name, role and institution. Never your email or phone.</small></span></label>
+        <label className="check"><input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} /><span><b>Show me in People</b><small>Other attendees see your name, role and institution.</small></span></label>
+        <label className={`check${listed ? '' : ' check-off'}`}><input type="checkbox" disabled={!listed} checked={listed && !!f.shareContact} onChange={(e) => setF({ ...f, shareContact: e.target.checked })} /><span><b>Share my contact details with other attendees</b><small>{listed ? 'Other attendees see your email and phone on your People card. Off: they stay private (you still see them in your pass).' : 'Turn on “Show me in People” first.'}</small></span></label>
         <ErrorNote text={err} />
         <button className="btn btn-primary btn-block">Save</button>
       </form>

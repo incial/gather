@@ -165,3 +165,16 @@ event's small banner) and `events/{id}/saved/{uid}`. My People reads the existin
 
 **Tests:** 115 rules tests (106 + 9 new: saving with capitalised emails, duplicates, private/draft events,
 other users, organisers with capitals, cancel, resend, roles).
+
+## Approved and built (12 Nov 2026): GatherUp complete update
+
+All additions; existing accounts, events, passes and old speaker codes keep working. Tested on the emulator (154 rules tests).
+
+- **D. 4-digit speaker code:** `speakerPins/{eventId}` (organisers only) and `events/{e}/speakerTries/{uid}` (each guess saved first, max 10 per person per event; only a saved guess matching the code can be marked correct). Roles from the new code require `code: 'PIN'` and give Pulse access. Old 10-character `speakerCodes` still work until they expire.
+- **F. Check-in history:** attendee records gain `checkedInBy`, `checkInSession`, method `self`. New `events/{e}/checkinLog/{id}` (add-only; removable only while the whole event is being deleted). A session self-scan also marks event attendance in the same step.
+- **E. Event types:** `eventType` and `typeDetails` on events (no rule change).
+- **B. Usernames:** `usernames/{handle}` = `{uid, at}`; `profiles.username`. Claim + profile update + release of the old name in one step; unique by document ID.
+- **C. Contact sharing:** `attendees.shareContact`; `directory` may hold `email`/`phone` only when it's on and they match the registration. Pings gain `fromPhone`/`toPhone`, each set only by its owner after acceptance.
+- **Announcements:** `events/{e}/announcements/{id}` (organisers post/delete; attendees, speakers read).
+- **Pulse:** creating sessions now needs an organiser, or a speaker for that event. Existing items stay editable by their owners.
+- **Not built (agreed for after 16 Nov):** per-event organisers (Main Organiser, invites, revoke).

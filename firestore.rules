@@ -52,12 +52,39 @@ service cloud.firestore {
 
     // Public profiles. Phone and email are never stored here (they live in users/{uid}).
     // Hidden profiles are readable only by their owner.
+    // Public usernames. The document ID is the username, so each can only belong to one account;
+    // a claim and the profile pointing at it are saved together, and the old one must be released.
+    match /usernames/{h} {
+      function profileAfter() { return /databases/$(database)/documents/profiles/$(request.auth.uid); }
+      allow get: if signedIn();
+      allow list, update: if false;
+      allow create: if notGuest() && h.matches('^[a-z0-9][a-z0-9_.]{2,19}$')
+        && request.resource.data.keys().hasOnly(['uid', 'at'])
+        && request.resource.data.uid == request.auth.uid && request.resource.data.at == request.time
+        && existsAfter(profileAfter()) && getAfter(profileAfter()).data.get('username', '') == h;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid
+        && (!existsAfter(profileAfter()) || getAfter(profileAfter()).data.get('username', '') != h);
+    }
+
     match /profiles/{uid} {
+      // A new or changed username must be claimed by this account in the same step,
+      // and the previous one released, so nobody can hold two or point at someone else's.
+      function usernameOk(d) {
+        let was = resource == null ? '' : resource.data.get('username', '');
+        let now = d.get('username', '');
+        return now == was || (
+          now is string && now.matches('^[a-z0-9][a-z0-9_.]{2,19}$')
+          && existsAfter(/databases/$(database)/documents/usernames/$(now))
+          && getAfter(/databases/$(database)/documents/usernames/$(now)).data.uid == uid
+          && (was == '' || !existsAfter(/databases/$(database)/documents/usernames/$(was)))
+        );
+      }
       function validProfile() {
         let d = request.resource.data;
         return d.keys().hasOnly(['profileId', 'name', 'photo', 'photoSource', 'headline', 'bio', 'organisation', 'designation',
                                  'education', 'skills', 'interests', 'location', 'linkedin', 'website', 'portfolio', 'links',
-                                 'visibility', 'updatedAt'])
+                                 'visibility', 'username', 'updatedAt'])
+          && usernameOk(d)
           && d.profileId is string && d.profileId.size() >= 6 && d.profileId.size() <= 20
           && d.name is string && d.name.size() > 0 && d.name.size() <= 80
           && d.photo is string && d.photo.size() <= 200000
@@ -121,6 +148,13 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'message'])
           && request.resource.data.status == 'pending'
           && request.resource.data.message is string && request.resource.data.message.size() > 0 && request.resource.data.message.size() <= 300)
+        // Once connected, each person can choose to share (or stop sharing) their own phone number with the other.
+        || (resource.data.status == 'accepted' && resource.data.fromUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fromPhone', 'updatedAt'])
+          && request.resource.data.fromPhone is string && request.resource.data.fromPhone.size() <= 20)
+        || (resource.data.status == 'accepted' && resource.data.toUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['toPhone', 'updatedAt'])
+          && request.resource.data.toPhone is string && request.resource.data.toPhone.size() <= 20)
       );
       // Organisers remove an event's pings when deleting the event.
       allow delete: if isOrganiser();
@@ -164,6 +198,16 @@ service cloud.firestore {
       allow create: if isOrganiser() && code.matches('^[A-Z0-9]{10}$')
         && request.resource.data.revoked == false && request.resource.data.common == true;
       allow update: if isOrganiser();
+    }
+
+    // Four-digit speaker code (PIN) for each event. Only organisers can read it.
+    match /speakerPins/{e} {
+      allow read, delete: if isOrganiser();
+      allow create, update: if isOrganiser()
+        && request.resource.data.keys().hasOnly(['pin', 'revoked', 'expiresAt', 'eventTitle', 'createdAt'])
+        && request.resource.data.pin is string && request.resource.data.pin.matches('^[0-9]{4}$')
+        && request.resource.data.revoked is bool
+        && request.resource.data.expiresAt is timestamp;
     }
 
     // Issued certificates. Anyone with the (long, random) ID can verify one; only organisers issue them.
@@ -225,13 +269,23 @@ service cloud.firestore {
         allow write: if isOrganiser();
       }
 
-      // The People list. Only these fields are allowed, so email and phone can never end up here.
+      // The People list. Only these fields are allowed; email and phone only when the person chose to share them.
       match /directory/{uid} {
+        // Email and phone appear here only when the person turned on "Share my contact details",
+        // and only their own, exactly as registered.
+        function contactOk(d) {
+          let a = getAfter(/databases/$(database)/documents/events/$(e)/attendees/$(uid)).data;
+          return (!('email' in d) && !('phone' in d)) || (
+            a.get('shareContact', false) == true
+            && d.get('email', '') == a.get('email', '') && d.get('phone', '') == a.get('phone', '')
+          );
+        }
         allow read: if isAttendee(e) || isOrganiser();
         allow create, update: if isMe(uid)
           && existsAfter(/databases/$(database)/documents/events/$(e)/attendees/$(uid))
           && request.resource.data.uid == uid
-          && request.resource.data.keys().hasOnly(['uid', 'name', 'institution', 'department', 'designation', 'photo']);
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'institution', 'department', 'designation', 'photo', 'email', 'phone'])
+          && contactOk(request.resource.data);
         allow delete: if isMe(uid) || isOrganiser();
       }
 
@@ -278,17 +332,59 @@ service cloud.firestore {
             && underCapacity()
           ))
         );
-        allow update: if (isOrganiser() && checkInTimeOk()) || (
+        // A new check-in by an organiser can't be recorded under someone else's account.
+        // (Optional, so a copy of the older app still open at the door keeps working.)
+        function checkInByOk() {
+          return request.resource.data.get('checkedIn', false) != true || resource.data.get('checkedIn', false) == true
+            || request.resource.data.get('checkedInBy', null) == null || request.resource.data.checkedInBy == request.auth.uid;
+        }
+        // Self check-in: scanning a session's live QR also marks you present at the event, once.
+        function selfCheckIn() {
+          let d = request.resource.data;
+          let att = /databases/$(database)/documents/events/$(e)/attendance/$(d.get('checkInSession', '') + '_' + uid);
+          return resource.data.get('checkedIn', false) != true
+            && d.diff(resource.data).affectedKeys().hasOnly(['checkedIn', 'checkedInAt', 'checkInMethod', 'checkedInBy', 'checkInSession'])
+            && d.checkedIn == true && d.checkInMethod == 'self' && d.checkedInBy == uid && d.checkedInAt == request.time
+            && existsAfter(att) && getAfter(att).data.uid == uid && getAfter(att).data.at == request.time;
+        }
+        allow update: if (isOrganiser() && checkInTimeOk() && checkInByOk()) || (
           isMe(uid)
           && request.resource.data.uid == uid
           && request.resource.data.email == resource.data.email
           && request.resource.data.joinedAt == resource.data.joinedAt
           && request.resource.data.source == resource.data.source
-          // Attendees can't check themselves in, and their pass ID never changes once set.
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['checkedIn', 'checkedInAt', 'checkInMethod'])
+          // Attendees can't check themselves in (except by a live session scan), and their pass ID never changes once set.
+          && (selfCheckIn() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['checkedIn', 'checkedInAt', 'checkInMethod', 'checkedInBy', 'checkInSession']))
           && (!('regId' in resource.data) || request.resource.data.get('regId', '') == resource.data.regId)
         );
         allow delete: if isOrganiser();
+      }
+
+      // Organiser announcements, shown in Activity to the event's attendees and speakers.
+      match /announcements/{id} {
+        allow read: if isAttendee(e) || isOrganiser() || isSpeaker(e);
+        allow create: if isOrganiser()
+          && request.resource.data.keys().hasOnly(['text', 'by', 'byName', 'at'])
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
+          && request.resource.data.by == request.auth.uid && request.resource.data.byName is string && request.resource.data.byName.size() <= 80
+          && request.resource.data.at == request.time;
+        allow delete: if isOrganiser();
+        allow update: if false;
+      }
+
+      // History of event check-ins. Entries are added, never changed or removed, so mistakes stay traceable.
+      match /checkinLog/{id} {
+        function entryOk(d) {
+          return d.keys().hasOnly(['uid', 'name', 'action', 'method', 'by', 'byName', 'at'])
+            && d.uid is string && d.action in ['in', 'undo'] && d.method in ['pass', 'manual', 'self', '']
+            && d.by == request.auth.uid && d.at == request.time;
+        }
+        allow read: if isOrganiser();
+        allow create: if (isOrganiser() && entryOk(request.resource.data))
+          || (isMe(request.resource.data.uid) && entryOk(request.resource.data) && request.resource.data.method == 'self' && request.resource.data.action == 'in');
+        allow update: if false;
+        // Only removed when the whole event is being deleted.
+        allow delete: if isOrganiser() && eventDoc(e).get('deleting', false) == true;
       }
 
       match /attendance/{id} {
@@ -366,7 +462,42 @@ service cloud.firestore {
 
       // Speaker roles. Created only with the event's current speaker code, and only for a
       // speaker profile that is linked to this same account.
+      // Speaker code guesses. Each guess is saved first (10 per person per event); only a saved guess
+      // that matches the event's code can be marked correct, so wrong guesses are never free.
+      match /speakerTries/{uid} {
+        function pinDoc() { return get(/databases/$(database)/documents/speakerPins/$(e)).data; }
+        function guessOk(d) {
+          return d.keys().hasOnly(['pin', 'n', 'ok', 'at']) && d.pin is string && d.pin.matches('^[0-9]{4}$')
+            && d.ok == false && d.at == request.time && d.n is int;
+        }
+        allow get: if isMe(uid) || isOrganiser();
+        allow list, delete: if isOrganiser();
+        allow create: if isMe(uid) && notGuest() && guessOk(request.resource.data) && request.resource.data.n == 1;
+        allow update: if isMe(uid) && notGuest() && (
+          (guessOk(request.resource.data) && request.resource.data.n == resource.data.n + 1 && request.resource.data.n <= 10)
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ok']) && request.resource.data.ok == true
+            && exists(/databases/$(database)/documents/speakerPins/$(e))
+            && pinDoc().revoked == false && request.time < pinDoc().expiresAt && resource.data.pin == pinDoc().pin)
+        );
+      }
+
       match /roles/{uid} {
+        // New four-digit code: the person's saved, verified guess must still match the current code.
+        function pinOk() {
+          let data = request.resource.data;
+          let t = get(/databases/$(database)/documents/events/$(e)/speakerTries/$(uid)).data;
+          let pin = get(/databases/$(database)/documents/speakerPins/$(e)).data;
+          let sp = getAfter(/databases/$(database)/documents/events/$(e)/speakers/$(data.speakerId)).data;
+          return isMe(uid)
+            && data.keys().hasOnly(['uid', 'name', 'email', 'roles', 'speakerId', 'status', 'active', 'pulse', 'code', 'at'])
+            && data.uid == uid && data.email == myEmail() && data.roles == ['speaker'] && data.status == 'verified' && data.active == true
+            && data.at == request.time && data.code == 'PIN'
+            && t.ok == true && t.pin == pin.pin && pin.revoked == false && request.time < pin.expiresAt
+            // Verified speakers can run Gather Pulse straight away.
+            && data.pulse == true
+            && sp.get('uid', '') == request.auth.uid;
+        }
+        // Older ten-character codes, kept so existing codes and speakers keep working.
         function codeOk() {
           let data = request.resource.data;
           let c = get(/databases/$(database)/documents/speakerCodes/$(data.code)).data;
@@ -381,8 +512,8 @@ service cloud.firestore {
         }
         allow get: if isMe(uid) || isOrganiser();
         allow list, delete: if isOrganiser();
-        allow create: if codeOk();
-        allow update: if isOrganiser() || codeOk();
+        allow create: if pinOk() || codeOk();
+        allow update: if isOrganiser() || pinOk() || codeOk();
       }
 
       // Attendee → speaker feedback. Anonymous feedback holds no name, photo or account ID,
@@ -472,7 +603,8 @@ service cloud.firestore {
         && request.resource.data.status == 'draft'
         && request.resource.data.kind in ['presentation', 'survey']
         && request.resource.data.access in ['public', 'signedIn', 'event']
-        && (request.resource.data.eventId == '' || isOrganiser() || speakerCanPulse(request.resource.data.eventId));
+        // Only organisers, and speakers for their own event, can create Pulse sessions. Attendees take part in them.
+        && (isOrganiser() || (request.resource.data.eventId != '' && speakerCanPulse(request.resource.data.eventId)));
       allow update: if canManage(resource.data)
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.eventId == resource.data.eventId

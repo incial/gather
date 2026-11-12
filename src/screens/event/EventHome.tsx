@@ -1,5 +1,6 @@
 'use client';
 
+import { TypeChip, TypeDetails } from '../../components/EventTypeInfo';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Avatar, Icon } from '../../components/ui';
@@ -37,7 +38,7 @@ function Countdown({ to }: { to: string }) {
 }
 
 export function EventHome() {
-  const { event, me, sessions, speakers, attendance, connections, feedback, info, sessionFeedback } = useEventCtx();
+  const { event, me, sessions, speakers, attendance, connections, feedback, info, sessionFeedback, role } = useEventCtx();
   // A count, not the whole list: 1 read instead of one per attendee.
   const people = useCount(`events/${event.id}/directory`);
   const now = useNow(30000);
@@ -57,6 +58,7 @@ export function EventHome() {
       <EventBanner event={event} className="span-2" />
       <section className="hello-card span-2">
         <span className="kicker">{ended ? 'That’s a wrap' : started ? 'We’re live' : 'See you soon'}, {first}</span>
+        <TypeChip event={event} />
         <h1>{event.title}</h1>
         <p>{event.tagline}</p>
         {!started && <Countdown to={event.startsAt} />}
@@ -69,10 +71,14 @@ export function EventHome() {
         <Link href={`/e/${event.id}/people`} className="chip"><Icon name="people" size={18} /> {people.n === null ? 'People' : `${people.n} ${people.n === 1 ? 'person' : 'people'}`}</Link>
         <Link href={`/e/${event.id}/assets`} className="chip"><Icon name="download" size={18} /> Assets</Link>
         <SaveEventButton event={event} compact />
+        {role
+          ? <Link href="/speaker" className="chip chip-speaker"><Icon name="mic" size={18} /> Speaker area</Link>
+          : <Link href={`/speaker?event=${event.id}`} className="chip"><Icon name="mic" size={18} /> I’m a speaker</Link>}
         <button className="chip" onClick={() => downloadBlob(`${event.title}.ics`, new Blob([icsFor(event)], { type: 'text/calendar' }))}><Icon name="calendar" size={18} /> Add to calendar</button>
       </nav>
 
       <ActivitiesCard />
+      <TypeDetails event={event} className="span-2" />
       <div className="span-2"><CertificateCard /></div>
       <div className="span-2"><ScheduleFiles eventId={event.id} compact /></div>
       {info?.wifiName && <WifiCard info={info} />}

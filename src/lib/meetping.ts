@@ -7,6 +7,9 @@ export type PingStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 
 /** One Meet Ping, in pings/{eventId}_{fromUid}_{toUid}. The ID itself prevents duplicate requests. */
 export interface PingDoc {
+  /** Phone numbers each person chose to share after connecting ('' = not shared). */
+  fromPhone?: string;
+  toPhone?: string;
   id: string;
   eventId: string;
   eventTitle: string;
@@ -141,3 +144,7 @@ export function relation(myUid: string, otherUid: string, pings: PingDoc[]) {
   if (out?.status === 'cancelled') return { kind: 'cancelled' as const, ping: out };
   return { kind: 'none' as const, ping: inc };
 }
+
+/** After connecting, share (or stop sharing) your own phone number with the other person. */
+export const sharePhone = (p: Pick<PingDoc, 'id' | 'fromUid'>, myUid: string, phone: string) =>
+  backend.write([{ type: 'set', path: `pings/${p.id}`, merge: true, data: { [p.fromUid === myUid ? 'fromPhone' : 'toPhone']: phone.trim().slice(0, 20), updatedAt: backend.now() } }]);

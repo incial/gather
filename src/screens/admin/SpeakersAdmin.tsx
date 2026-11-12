@@ -10,9 +10,9 @@ import { speakersSheet } from '../../lib/exports';
 import { friendlyError } from '../../lib/format';
 import { speakerUrl } from '../../lib/qr';
 import type { RoleDoc, SpeakerCategory, SpeakerCodeDoc, SpeakerDoc } from '../../lib/types';
-import { CATEGORIES, createEventSpeakerCode, revokeCode, revokeSpeaker, saveSpeakerOrder, showCode, sortSpeakers } from '../../lib/speakers';
+import { CATEGORIES, MAX_TRIES, resetTries, revokeCode, revokeSpeaker, saveSpeakerOrder, setSpeakerPin, showCode, sortSpeakers, switchOffPin, type SpeakerPinDoc, type SpeakerTryDoc } from '../../lib/speakers';
 import { loadEventData, useAdmin } from './context';
-import { useCol, useCount } from '../../lib/live';
+import { useCol, useCount, useDoc } from '../../lib/live';
 
 const blank: SpeakerDoc = { id: '', name: '', role: '', organisation: '', topic: '', expertise: '', bio: '', email: '', phone: '', linkedin: '', website: '', links: [] };
 
@@ -123,38 +123,42 @@ export function SpeakersAdmin() {
   );
 }
 
-/** The event's one shared speaker code: show, share, change, or switch off. */
+/** The event's four-digit speaker code: show, share, change, switch off, and reset anyone locked out. */
 function SpeakerCodePanel({ codes, roles }: { codes: SpeakerCodeDoc[]; roles: RoleDoc[] }) {
   const { event } = useAdmin();
   const toast = useToast();
+  const pinDoc = useDoc<SpeakerPinDoc>(`speakerPins/${event.id}`);
+  const tries = useCol<SpeakerTryDoc>(`events/${event.id}/speakerTries`);
   const [days, setDays] = useState(30);
-  const [pulse, setPulse] = useState(true);
   const [busy, setBusy] = useState(false);
-  const live = codes.filter((c) => c.common && !c.revoked && Date.parse(c.expiresAt) > Date.now()).sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))[0];
+  const p = pinDoc.data;
+  const live = p && !p.revoked && Date.parse(p.expiresAt) > Date.now() ? p : null;
+  const legacy = codes.filter((c) => c.common && !c.revoked && Date.parse(c.expiresAt) > Date.now());
+  const locked = tries.data.filter((t) => t.n >= MAX_TRIES && !t.ok);
   const active = roles.filter((r) => r.active).length;
   async function make() {
     setBusy(true);
-    try { await createEventSpeakerCode(event, { days, pulse }, live?.id); toast(live ? 'New code made. The old one no longer works.' : 'Speaker code made'); }
+    try { await setSpeakerPin(event, days); toast(live ? 'New code made. The old one no longer works.' : 'Speaker code made'); }
     catch (x) { toast(friendlyError(x), 'err'); }
     setBusy(false);
   }
-  const link = typeof window === 'undefined' ? '' : `${window.location.origin}/speaker`;
-  const msg = live ? `You're a speaker at ${event.title} on Gather. Sign in at ${link} with your usual account, turn on "I'm a speaker" and enter the speaker code ${showCode(live.id)}.` : '';
+  const link = typeof window === 'undefined' ? '' : `${window.location.origin}/speaker?event=${event.id}`;
+  const msg = live ? `You're a speaker at ${event.title} on Gather. Open ${link} with your usual account and enter the speaker code ${live.pin}.` : '';
   return (
     <section className="panel spk-code-panel">
       <div className="row-between">
-        <div><h2><KeyRound size={18} aria-hidden="true" /> Speaker code</h2><p className="muted">One code for all speakers of this event. Speakers use their normal account: they turn on “I’m a speaker”, enter this code, then pick their name from your list or use their own profile.</p></div>
+        <div><h2><KeyRound size={18} aria-hidden="true" /> Speaker code</h2><p className="muted">One 4-digit code for all speakers of this event. Speakers use their normal account: they tap “I’m a speaker”, enter this code once, then pick their name from your list or use their own profile. They can run Gather Pulse straight away.</p></div>
         <span className="pill">{active} {active === 1 ? 'speaker' : 'speakers'} linked</span>
       </div>
-      {live ? (
+      {pinDoc.loading ? null : live ? (
         <div className="spk-code-box">
-          <b className="spk-code">{showCode(live.id)}</b>
-          <small className="muted">Valid until {new Date(live.expiresAt).toLocaleDateString()}{live.pulse ? ' · speakers can run Pulse' : ' · Pulse off for speakers'}</small>
+          <b className="spk-code spk-pin" aria-label={`Speaker code ${live.pin.split('').join(' ')}`}>{live.pin}</b>
+          <small className="muted">Valid until {new Date(live.expiresAt).toLocaleDateString()} · 10 tries per person</small>
           <div className="row-center">
             <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(msg).then(() => toast('Message copied'))}>Copy message</button>
             <a className="btn btn-ghost btn-sm" href={`https://wa.me/?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">WhatsApp</a>
             <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (confirm('Make a new code? The current one stops working; speakers already linked stay linked.')) make(); }}>Change code</button>
-            <button className="link danger" onClick={() => { if (confirm('Switch the speaker code off? Nobody new can become a speaker until you make a new one.')) revokeCode(live.id).then(() => toast('Speaker code switched off')).catch((x) => toast(friendlyError(x), 'err')); }}>Switch off</button>
+            <button className="link danger" onClick={() => { if (confirm('Switch the speaker code off? Nobody new can become a speaker until you make a new one.')) switchOffPin(event.id).then(() => toast('Speaker code switched off')).catch((x) => toast(friendlyError(x), 'err')); }}>Switch off</button>
           </div>
         </div>
       ) : (
@@ -162,8 +166,19 @@ function SpeakerCodePanel({ codes, roles }: { codes: SpeakerCodeDoc[]; roles: Ro
           <label className="field"><span className="field-label">Valid for</span>
             <select value={days} onChange={(e) => setDays(Number(e.target.value))}>{[3, 7, 14, 30, 90].map((d) => <option key={d} value={d}>{d} days</option>)}</select>
           </label>
-          <label className="check"><input type="checkbox" checked={pulse} onChange={(e) => setPulse(e.target.checked)} /> Speakers can run Pulse</label>
-          <button className="btn btn-primary btn-sm" disabled={busy} onClick={make}><KeyRound size={15} /> {busy ? 'Making…' : 'Make speaker code'}</button>
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={make}><KeyRound size={15} /> {busy ? 'Making…' : 'Make 4-digit speaker code'}</button>
+        </div>
+      )}
+      {locked.length > 0 && (
+        <div className="row-between spk-locked">
+          <small><b>{locked.length}</b> {locked.length === 1 ? 'person has' : 'people have'} used all 10 tries.</small>
+          <button className="btn btn-ghost btn-sm" onClick={() => resetTries(event.id, locked.map((t) => t.id)).then(() => toast('Tries reset')).catch((x) => toast(friendlyError(x), 'err'))}>Reset their tries</button>
+        </div>
+      )}
+      {legacy.length > 0 && (
+        <div className="row-between spk-locked">
+          <small className="muted">An older 10-letter code ({showCode(legacy[0].id)}) still works until {new Date(legacy[0].expiresAt).toLocaleDateString()}.</small>
+          <button className="link danger" onClick={() => Promise.all(legacy.map((c) => revokeCode(c.id))).then(() => toast('Old code switched off')).catch((x) => toast(friendlyError(x), 'err'))}>Switch it off</button>
         </div>
       )}
     </section>

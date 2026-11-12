@@ -52,6 +52,7 @@ export function PersonProfile() {
         <div className="pp-id">
           <EmojiAvatar id={uid} photo={photo || undefined} size={112} />
           <h1>{name}{uid === me.uid && <span className="you">You</span>}</h1>
+          {p?.username && <p className="ph-handle">@{p.username}</p>}
           <span className={`role-chip${speaker ? ' speaker' : ''}`}>{role} at {event.title}</span>
           {p?.headline && <p className="pp-headline">{p.headline}</p>}
           {work && <p className="muted">{work}</p>}
@@ -61,6 +62,12 @@ export function PersonProfile() {
             {speaker && <Link className="btn btn-ghost" href={`/e/${event.id}/speakers/${speaker.id}`}>Speaker page</Link>}
           </div>
           {rel.kind === 'incoming' && rel.ping && <blockquote className="pp-msg">“{rel.ping.message}”</blockquote>}
+          {(dir.data?.email || dir.data?.phone) && (
+            <div className="pp-contact">
+              {dir.data?.email && <a className="btn btn-ghost btn-sm" href={`mailto:${dir.data.email}`}><span aria-hidden="true">✉️</span> {dir.data.email}</a>}
+              {dir.data?.phone && <a className="btn btn-ghost btn-sm" href={`tel:${dir.data.phone}`}><span aria-hidden="true">📞</span> {dir.data.phone}</a>}
+            </div>
+          )}
         </div>
       </article>
 
@@ -79,7 +86,7 @@ export function PersonProfile() {
         </section>
       )}
       {!p && <p className="muted">{name} hasn’t made more of their profile public.</p>}
-      <p className="muted pp-privacy">Email addresses and phone numbers are never shown here.</p>
+      <p className="muted pp-privacy">{dir.data?.email || dir.data?.phone ? `${name} chose to share their contact details with attendees.` : 'Email and phone are shown only when the person chooses to share them.'}</p>
     </div>
   );
 }

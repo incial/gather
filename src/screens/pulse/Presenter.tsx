@@ -12,7 +12,7 @@ import { leaderboard, summarize, TYPES } from '../../lib/pulse/engine';
 import type { PulseDoc, PulseQuestion, PulseResponse, PulseState } from '../../lib/pulse/types';
 import { problems, SlideHead } from './Builder';
 import { Leaderboard, ResultView } from './questions';
-import { pulseJoinUrl } from './share';
+import { JoinScreen, pulseJoinUrl } from './share';
 
 export function Presenter() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +20,7 @@ export function Presenter() {
   const nav = useRouter();
   const [p, setP] = useState<PulseDoc | null>(null);
   const [key, setKey] = useState<PulseKey | null>(null);
+  const [joinBig, setJoinBig] = useState(false);
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [board, setBoard] = useState(false);
@@ -125,9 +126,10 @@ export function Presenter() {
     <div className="pl-present">
       <header className="pl-present-top">
         <div className="pl-join-strip">Join at <b>{host}</b> with code <b className="pl-code">{p.code}</b></div>
-        <div className="pl-present-qr"><QrImage text={url} size={84} label="QR code to join" /></div>
+        <button className="pl-present-qr" onClick={() => setJoinBig(true)} aria-label="Show the join QR full screen"><QrImage text={url} size={96} label="QR code to join" /><small>Tap to enlarge</small></button>
       </header>
 
+      {joinBig && <JoinScreen p={p} onClose={() => setJoinBig(false)} />}
       <main className="pl-present-main">
         <SlideHead slide={slide} big />
         {board ? <div className="pl-present-results"><h2 className="pl-board-title"><Trophy size={26} aria-hidden="true" /> Leaderboard</h2><Leaderboard rows={board10} /></div>

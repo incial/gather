@@ -1,5 +1,6 @@
 'use client';
 
+import { TypeChip, TypeDetails } from '../../components/EventTypeInfo';
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -26,6 +27,7 @@ export function Landing({ event }: { event: EventDoc }) {
       <section className="ticket">
         <div className="ticket-main">
           <span className="kicker">{event.organiser}</span>
+          <TypeChip event={event} />
           <h1>{event.title}</h1>
           <p className="ticket-tag">{event.tagline}</p>
           <dl className="ticket-facts">
@@ -39,6 +41,7 @@ export function Landing({ event }: { event: EventDoc }) {
       <section className="landing-body">
         {user && <div className="landing-save"><SaveEventButton event={event} /></div>}
         {event.description && <p className="lede">{event.description}</p>}
+        <TypeDetails event={event} />
         <EventVideo url={event.videoUrl} title={event.title} />
         {event.lineup.length > 0 && <>
           <h2>Speakers</h2>
@@ -80,7 +83,7 @@ export function JoinForm({ event, onDone }: { event: EventDoc; onDone?: () => vo
         setForm({
           name: m?.name || pub?.name || user!.name, phone: m?.phone ?? '',
           institution: m?.institution || pub?.organisation || '', department: m?.department ?? '',
-          designation: m?.designation || pub?.designation || '',
+          designation: m?.designation || pub?.designation || '', shareContact: m?.shareContact ?? false,
         });
       }).catch(() => {});
     }).catch(() => setPrereg(null));
@@ -117,7 +120,8 @@ export function JoinForm({ event, onDone }: { event: EventDoc; onDone?: () => vo
         <Field label="Department"><input value={form.department} onChange={set('department')} /></Field>
         <Field label="Designation"><input value={form.designation} onChange={set('designation')} /></Field>
       </div>
-      <label className="check"><input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} /><span><b>Show me in People</b><small>Other attendees see your name, role and institution. Never your email or phone.</small></span></label>
+      <label className="check"><input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} /><span><b>Show me in People</b><small>Other attendees see your name, role and institution.</small></span></label>
+      <label className={`check${listed ? '' : ' check-off'}`}><input type="checkbox" disabled={!listed} checked={listed && !!form.shareContact} onChange={(e) => setForm({ ...form, shareContact: e.target.checked })} /><span><b>Share my contact details with other attendees</b><small>{listed ? 'Other attendees see your email and phone on your People card. Off: they stay private (you still see them in your pass).' : 'Turn on “Show me in People” first.'}</small></span></label>
       <ErrorNote text={err} />
       <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Joining…' : 'Join event'}</button>
     </form>

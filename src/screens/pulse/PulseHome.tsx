@@ -11,6 +11,7 @@ import { backend } from '../../lib/backend';
 import { fmtDateTime, friendlyError } from '../../lib/format';
 import { useCol, useCount } from '../../lib/live';
 import { createPulse, deletePulse, P } from '../../lib/pulse/api';
+import { usePulseRole } from '../../lib/roles';
 import type { PulseDoc } from '../../lib/pulse/types';
 import type { EventDoc } from '../../lib/types';
 import { ShareModal } from './share';
@@ -44,12 +45,19 @@ type Filter = 'all' | 'presentation' | 'survey' | 'draft' | 'active' | 'closed';
 
 export function PulseHome() {
   const { user } = useAuth();
+  const role = usePulseRole();
+  const [ev, setEv] = useState('');
   const mine = useCol<PulseDoc>(user ? 'pulse' : null, [['ownerUid', user?.uid]]);
   const [filter, setFilter] = useState<Filter>('all');
   const [share, setShare] = useState<PulseDoc | null>(null);
   const list = useMemo(() => [...mine.data].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')), [mine.data]);
   const shown = list.filter((p) => filter === 'all' || p.kind === filter || p.status === filter || (filter === 'active' && (p.status === 'live' || p.status === 'published')));
   const n = (f: (p: PulseDoc) => boolean) => list.filter(f).length;
+  // Speakers (not organisers) create sessions for the event they speak at.
+  const evId = role.organiser ? '' : ev || role.speakerEvents[0]?.eventId || '';
+  const evQ = evId ? `&event=${evId}` : '';
+
+  if (!role.loading && !mine.loading && !role.canManage && list.length === 0) return <PulseTakePart />;
 
   return (
     <div className="pl">
@@ -62,10 +70,15 @@ export function PulseHome() {
             <h1>Every voice matters.<br />Every response counts.</h1>
             <p>Live polls, word clouds, quizzes and Q&A for your audience, or a survey you share with a link. No app for anyone to install.</p>
           </div>
-          <div className="pl-create">
-            <Link href="/pulse/create?kind=presentation" className="pl-create-card pres"><Presentation size={26} aria-hidden="true" /><b>Create presentation</b><span>Ask questions live, show results on the big screen</span></Link>
-            <Link href="/pulse/create?kind=survey" className="pl-create-card survey"><ClipboardList size={26} aria-hidden="true" /><b>Create survey</b><span>Share a link, collect answers in people’s own time</span></Link>
-          </div>
+          {role.canManage ? <div className="pl-create">
+            {!role.organiser && role.speakerEvents.length > 1 && (
+              <label className="field pl-ev-pick"><span className="field-label">For which event?</span>
+                <select value={evId} onChange={(e) => setEv(e.target.value)}>{role.speakerEvents.map((s) => <option key={s.eventId} value={s.eventId}>{s.eventTitle}</option>)}</select>
+              </label>
+            )}
+            <Link href={`/pulse/create?kind=presentation${evQ}`} className="pl-create-card pres"><Presentation size={26} aria-hidden="true" /><b>Create presentation</b><span>Ask questions live, show results on the big screen</span></Link>
+            <Link href={`/pulse/create?kind=survey${evQ}`} className="pl-create-card survey"><ClipboardList size={26} aria-hidden="true" /><b>Create survey</b><span>Share a link, collect answers in people’s own time</span></Link>
+          </div> : <p className="pl-note">New Pulse sessions are run by organisers and speakers. You can still manage the ones you made earlier below. <Link href="/speaker">Speaking at an event?</Link></p>}
         </section>
 
         <div className="stat-row">
@@ -125,24 +138,57 @@ function PulseCard({ p, onShare }: { p: PulseDoc; onShare: () => void }) {
   );
 }
 
+/** For attendees: Pulse is something you take part in, not run. */
+function PulseTakePart() {
+  const nav = useRouter();
+  const [code, setCode] = useState('');
+  return (
+    <div className="pl">
+      <DemoBanner />
+      <PulseTop />
+      <main className="pl-main">
+        <section className="pl-hero">
+          <div>
+            <span className="pl-kicker">Gather Pulse</span>
+            <h1>Take part in live polls and surveys</h1>
+            <p>When an organiser or speaker starts a session, it shows up in Activity. Or type the code on the screen.</p>
+          </div>
+          <form className="pl-take card" onSubmit={(e) => { e.preventDefault(); if (code.length >= 6) nav.push(`/pulse/join/${code}`); }}>
+            <label className="field"><span className="field-label">Code on the screen</span>
+              <input className="pl-code-input" value={code} maxLength={8} autoCapitalize="characters" autoComplete="off" placeholder="ABC123" onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} /></label>
+            <button className="btn btn-primary btn-block" disabled={code.length < 6}>Join</button>
+            <Link className="btn btn-ghost btn-block" href="/activity">See what’s live in Activity</Link>
+          </form>
+        </section>
+        <p className="pl-note">Running a session? Pulse is for organisers and speakers. <Link href="/speaker">Enter your speaker code</Link> to get access.</p>
+      </main>
+    </div>
+  );
+}
+
 /** /pulse/create?kind=…&event=… makes a draft and opens the builder. */
 export function PulseCreate() {
   const { user } = useAuth();
+  const role = usePulseRole();
   const nav = useRouter();
   const search = useSearchParams();
   const [err, setErr] = useState('');
   const started = useRef(false);
   useEffect(() => {
-    if (!user || started.current) return;
+    if (!user || started.current || role.loading) return;
     started.current = true;
     const kind = search.get('kind') === 'survey' ? 'survey' : 'presentation';
     const eventId = search.get('event');
+    if (!role.organiser && !(eventId && role.speakerEvents.some((s) => s.eventId === eventId))) {
+      setErr(role.canManage ? 'Choose the event you’re speaking at.' : 'Pulse sessions are run by organisers and speakers.');
+      return;
+    }
     (async () => {
       const ev = eventId ? await backend.getDoc<EventDoc>(`events/${eventId}`) : null;
       const id = await createPulse(kind, user, ev ? { id: ev.id, title: ev.title } : undefined);
       nav.replace(`/pulse/edit/${id}`);
     })().catch((x) => setErr(friendlyError(x)));
-  }, [user, search, nav]);
+  }, [user, search, nav, role.loading, role.organiser, role.canManage, role.speakerEvents]);
   return (
     <div className="center">
       {err ? <Empty title="Couldn’t create it">{err} <Link href="/pulse">Back to Pulse</Link></Empty> : <Spinner label="Creating" />}

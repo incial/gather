@@ -54,13 +54,17 @@ beforeEach(async () => {
 });
 
 describe('creating and managing', () => {
-  it('a Google user creates a draft with its code and key in one batch', async () => {
-    const db = owner();
+  it('an organiser creates a draft with its code and key in one batch', async () => {
+    const db = org();
     const b = writeBatch(db);
-    b.set(doc(db, 'pulse/new'), pulse({ status: 'draft', code: 'NEW234' }));
-    b.set(doc(db, 'pulseCodes/NEW234'), { pid: 'new', ownerUid: 'owner' });
+    b.set(doc(db, 'pulse/new'), pulse({ status: 'draft', code: 'NEW234', ownerUid: 'org' }));
+    b.set(doc(db, 'pulseCodes/NEW234'), { pid: 'new', ownerUid: 'org' });
     b.set(doc(db, 'pulse/new/private/key'), { answers: {}, openedAt: {}, vaultId: '' });
     await assertSucceeds(b.commit());
+  });
+  it('plain attendees can’t create Pulse sessions (they take part in them)', async () => {
+    await assertFails(setDoc(doc(owner(), 'pulse/new'), pulse({ status: 'draft', code: 'NEW234' })));
+    await assertFails(setDoc(doc(ben(), 'pulse/x'), pulse({ status: 'draft', ownerUid: 'ben', eventId: '' })));
   });
   it('guests and signed-out visitors cannot create', async () => {
     await assertFails(setDoc(doc(guest(), 'pulse/x'), pulse({ status: 'draft', ownerUid: 'g1' })));
@@ -69,7 +73,7 @@ describe('creating and managing', () => {
   it('a join code can never be taken over', async () => {
     await assertFails(setDoc(doc(ben(), 'pulseCodes/ABC234'), { pid: 'mine', ownerUid: 'ben' }));
   });
-  it('only standalone activities for non-organisers; event activities need an organiser', async () => {
+  it('event activities need an organiser (or that event’s speaker)', async () => {
     await assertFails(setDoc(doc(ben(), 'pulse/x'), pulse({ status: 'draft', ownerUid: 'ben', eventId: 'e1' })));
     await assertSucceeds(setDoc(doc(org(), 'pulse/x'), pulse({ status: 'draft', ownerUid: 'org', eventId: 'e1' })));
   });

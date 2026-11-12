@@ -5,10 +5,11 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  ArrowRight, BadgeCheck, Bookmark, CalendarDays, Check, ChevronLeft, Clock, Coffee, Compass, Download, ExternalLink, Globe, Hammer,
+  ArrowRight, BadgeCheck, Bell, Bookmark, CalendarDays, Check, ChevronLeft, Clock, Coffee, Compass, Download, ExternalLink, Globe, Hammer,
   House, Lock, Mail, MapPin, MessageSquareText, Mic, Phone, Plus, ScanLine, ShieldCheck, Sparkles, Star, Ticket, UserRound, Users, Wifi, X,
 } from 'lucide-react';
 import { isDemo } from '../lib/backend';
+import { usePulseRole } from '../lib/roles';
 import { downloadCsv } from '../lib/csv';
 import type { Sheet } from '../lib/exports';
 import { hue, initials } from '../lib/format';
@@ -26,7 +27,7 @@ const ICONS = {
   back: ChevronLeft, wifi: Wifi, calendar: CalendarDays, ticket: Ticket, shield: ShieldCheck, bookmark: Bookmark,
   compass: Compass, close: X, check: Check, star: Star, download: Download, external: ExternalLink, arrow: ArrowRight,
   lock: Lock, mail: Mail, phone: Phone, globe: Globe, clock: Clock, pin: MapPin, mic: Mic, tool: Hammer,
-  sparkle: Sparkles, coffee: Coffee, verified: BadgeCheck,
+  sparkle: Sparkles, coffee: Coffee, verified: BadgeCheck, bell: Bell,
 };
 export type IconName = keyof typeof ICONS;
 
@@ -42,12 +43,15 @@ export function LinkedinIcon({ size = 20 }: { size?: number }) {
 
 export function GlobalNav() {
   const pathname = usePathname();
+  const role = usePulseRole();
+  // Pulse is in the menu for organisers and speakers, who run sessions. Attendees take part through Activity.
   const items = [
     { href: '/', label: 'My events', icon: 'home' },
     { href: '/explore', label: 'Explore', icon: 'compass' },
     { href: '/join', label: 'Join', icon: 'scan' },
+    { href: '/activity', label: 'Activity', icon: 'bell' },
     { href: '/people', label: 'People', icon: 'people' },
-    { href: '/pulse', label: 'Pulse', icon: 'sparkle' },
+    ...(role.canManage ? [{ href: '/pulse', label: 'Pulse', icon: 'sparkle' }] as const : []),
     { href: '/profile', label: 'Profile', icon: 'speakers' },
   ] as const;
   return (

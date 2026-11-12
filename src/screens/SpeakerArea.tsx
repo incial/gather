@@ -10,10 +10,11 @@ import { useAuth } from '../lib/auth';
 import { fmtDate, fmtDateTime, friendlyError } from '../lib/format';
 import { useCol, useDoc } from '../lib/live';
 import type { PulseDoc } from '../lib/pulse/types';
-import { becomeSpeaker, checkSpeakerCode, cleanCode, feedbackStats, saveMySpeakerProfile, setFeedbackStatus, showCode, type CodeCheck, type OwnSpeakerProfile } from '../lib/speakers';
+import { becomeSpeaker, cleanPin, feedbackStats, saveMySpeakerProfile, setFeedbackStatus, tryPin, verifiedTry, type OwnSpeakerProfile, type SpeakerGrant } from '../lib/speakers';
+import { findEventByCode } from '../lib/api';
 import { backend } from '../lib/backend';
 import type { PublicProfile } from '../lib/profile';
-import type { SpeakerDoc, SpeakerFeedbackDoc, SpeakingDoc } from '../lib/types';
+import type { EventDoc, MembershipDoc, SpeakerDoc, SpeakerFeedbackDoc, SpeakingDoc } from '../lib/types';
 import { STATUS_LABEL } from './pulse/PulseHome';
 
 /** /speaker: activate with a code, then see feedback and Pulse sessions for each event you speak at. */
@@ -47,53 +48,108 @@ export function SpeakerArea() {
 function ActivateCard() {
   const { user } = useAuth();
   const toast = useToast();
+  const speakingNow = useCol<SpeakingDoc>(user ? `users/${user.uid}/speaking` : null);
+  const joined = useCol<MembershipDoc>(user ? `users/${user.uid}/events` : null);
   const [on, setOn] = useState(false);
-  const [code, setCode] = useState('');
+  const [ev, setEv] = useState<EventDoc | null>(null);
+  const [eventCode, setEventCode] = useState('');
+  const [pin, setPin] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [chk, setChk] = useState<Extract<CodeCheck, { ok: true }> | null>(null);
+  const [chk, setChk] = useState<SpeakerGrant | null>(null);
   const [own, setOwn] = useState<OwnSpeakerProfile | null>(null);
+  const choices = joined.data.filter((m) => !speakingNow.data.some((s) => s.eventId === m.id));
 
-  async function check(e: FormEvent) {
+  // Opened from an event (?event=…): start there. Already entered the right code? Skip straight to the next step.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('event');
+    if (id) { setOn(true); pick(id); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  async function pick(id: string) {
+    setErr(''); setBusy(true);
+    const e = await backend.getDoc<EventDoc>(`events/${id}`).catch(() => null);
+    if (!e) { setBusy(false); setErr('That event isn’t available.'); return; }
+    // Already a speaker here: nothing to enter again.
+    const already = await backend.getDoc<SpeakingDoc>(`users/${user!.uid}/speaking/${e.id}`).catch(() => null);
+    if (already) { setBusy(false); setOn(false); toast(`You’re already a speaker at ${e.title}.`); return; }
+    setEv(e);
+    if (await verifiedTry(user!.uid, e.id)) setChk({ event: e, code: 'PIN', pulse: true });
+    setBusy(false);
+  }
+  async function byEventCode(e: FormEvent) {
     e.preventDefault();
     setErr(''); setBusy(true);
-    const r = await checkSpeakerCode(code);
+    const found = await findEventByCode(eventCode.replace(/\D/g, '')).catch(() => null);
     setBusy(false);
-    if (!r.ok) { setErr(r.reason); return; }
-    setChk(r);
+    if (!found) { setErr('No event has that number. Check the 6-digit event number with the organiser.'); return; }
+    pick(found.id);
+  }
+  async function check(e: FormEvent) {
+    e.preventDefault();
+    if (!ev) return;
+    setErr(''); setBusy(true);
+    const r = await tryPin(user!, ev.id, pin).catch(() => ({ ok: false as const, reason: 'Couldn’t check the code. Check your connection and try again.', left: 1 }));
+    setBusy(false);
+    if (!r.ok) { setErr(r.reason); setPin(''); return; }
+    setChk({ event: ev, code: 'PIN', pulse: true });
   }
   async function finish(choice: Parameters<typeof becomeSpeaker>[2]) {
     if (!chk) return;
     setErr(''); setBusy(true);
     const r = await becomeSpeaker(user!, chk, choice);
     setBusy(false);
-    if (!r.ok) { setErr(r.reason); return; }
-    confetti(); toast(`You’re a speaker at ${chk.event.title}`);
-    setChk(null); setOwn(null); setCode(''); setOn(false);
+    if (!r.ok) {
+      setErr(r.reason);
+      // The code was changed since they verified: ask for the new one.
+      if (!(await verifiedTry(user!.uid, chk.event.id)) || /changed/.test(r.reason)) { setChk(null); setOwn(null); }
+      return;
+    }
+    confetti(); toast(`You’re a speaker at ${chk.event.title}. Gather Pulse is ready for you.`);
+    setChk(null); setOwn(null); setPin(''); setEv(null); setOn(false);
   }
   async function startOwn() {
     // Start from the person's own public profile, so they don't type everything again.
     const p = await backend.getDoc<PublicProfile>(`profiles/${user!.uid}`).catch(() => null);
     setOwn({ name: p?.name || user!.name, role: p?.designation || '', organisation: p?.organisation || '', topic: '', bio: p?.bio || '', photo: p?.photo || user!.photo || '', linkedin: p?.linkedin || '', website: p?.website || '' });
   }
-  const shown = cleanCode(code);
   const listed = chk ? chk.event.lineup ?? [] : [];
 
   return (
     <section className="card sp-activate">
       <label className="sfb-toggle sp-toggle">
-        <input type="checkbox" role="switch" checked={on} onChange={(e) => { setOn(e.target.checked); setErr(''); setChk(null); setOwn(null); }} />
+        <input type="checkbox" role="switch" checked={on} onChange={(e) => { setOn(e.target.checked); setErr(''); setChk(null); setOwn(null); setEv(null); setPin(''); }} />
         <span className="sfb-switch" aria-hidden="true" />
         <span><b>I’m a speaker</b><small className="muted">Turn on if you’re speaking at an event. You keep using this same account.</small></span>
       </label>
 
-      {on && !chk && (
+      {on && !ev && (
+        <div className="stack">
+          <small className="muted">Which event are you speaking at?</small>
+          {choices.length > 0 && (
+            <ul className="sp-events">
+              {choices.map((m) => (
+                <li key={m.id}><button className="sp-event-btn" disabled={busy} onClick={() => pick(m.id)}>
+                  <span className={`sp-event-dot a-${m.color}`} aria-hidden="true" /><span className="grow"><b>{m.title}</b><small className="muted">{m.venue}</small></span>
+                </button></li>
+              ))}
+            </ul>
+          )}
+          <form className="row sp-row" onSubmit={byEventCode}>
+            <input className="sp-evcode" inputMode="numeric" value={eventCode} maxLength={6} placeholder="6-digit event number" aria-label="Event number" onChange={(e) => setEventCode(e.target.value.replace(/\D/g, ''))} />
+            <button className="btn btn-ghost" disabled={busy || eventCode.length !== 6}>Find event</button>
+          </form>
+        </div>
+      )}
+
+      {on && ev && !chk && (
         <form className="stack" onSubmit={check}>
-          <small className="muted">Enter the speaker code from the organiser.</small>
-          <div className="row">
-            <input className="sp-code" value={shown.length > 5 ? showCode(shown) : shown} maxLength={11} placeholder="ABCDE-23456" aria-label="Speaker code" autoCapitalize="characters" autoComplete="off" autoFocus onChange={(e) => setCode(e.target.value)} />
-            <button className="btn btn-primary" disabled={busy || shown.length !== 10}>{busy ? 'Checking…' : 'Continue'}</button>
+          <small className="muted">Enter the 4-digit speaker code for <b>{ev.title}</b> from the organiser.</small>
+          <div className="row sp-row">
+            <input className="sp-pin" inputMode="numeric" pattern="[0-9]{4}" value={pin} maxLength={4} placeholder="••••" aria-label="Four-digit speaker code" autoComplete="one-time-code" autoFocus onChange={(e) => setPin(cleanPin(e.target.value))} />
+            <button className="btn btn-primary" disabled={busy || pin.length !== 4}>{busy ? 'Checking…' : 'Continue'}</button>
           </div>
+          <button type="button" className="link" onClick={() => { setEv(null); setPin(''); setErr(''); }}>Choose a different event</button>
         </form>
       )}
 
@@ -110,7 +166,7 @@ function ActivateCard() {
             </ul>
           ) : <p className="muted">The organiser hasn’t listed speakers yet.</p>}
           <button className="btn btn-ghost" disabled={busy} onClick={startOwn}>I’m not on the list: use my own profile</button>
-          <button className="link" onClick={() => setChk(null)}>Use a different code</button>
+          <button className="link" onClick={() => { setChk(null); setEv(null); }}>Choose a different event</button>
         </div>
       )}
 

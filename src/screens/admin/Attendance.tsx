@@ -11,6 +11,27 @@ import { checkInAttendee, undoCheckIn } from '../../lib/api';
 import { downloadCsv } from '../../lib/csv';
 import { fmtDateTime, fmtTime } from '../../lib/format';
 import type { AttendeeDoc } from '../../lib/types';
+import { useAuth } from '../../lib/auth';
+import { backend } from '../../lib/backend';
+
+const METHOD: Record<NonNullable<AttendeeDoc['checkInMethod']>, string> = { pass: 'Pass scan', manual: 'Manual', self: 'Self scan' };
+interface LogEntry { id: string; uid: string; name: string; action: 'in' | 'undo'; method: string; by: string; byName: string; at: string }
+
+/** The check-in history, read only when asked for (it can be long). */
+function CheckInHistory({ eventId }: { eventId: string }) {
+  const [rows, setRows] = useState<LogEntry[] | null>(null);
+  const [err, setErr] = useState(false);
+  const load = () => { setErr(false); backend.getCol<LogEntry>(`events/${eventId}/checkinLog`, [], { orderBy: 'at', desc: true, limit: 40 }).then(setRows).catch(() => setErr(true)); };
+  if (!rows) return <div className="row"><button className="btn btn-ghost btn-sm" onClick={load}>Show check-in history</button>{err && <span className="error">Couldn’t load the history.</span>}</div>;
+  return (
+    <details className="checkin-log" open>
+      <summary>Check-in history · last {rows.length}</summary>
+      {!rows.length ? <p className="muted">No check-ins recorded yet.</p> : (
+        <ul>{rows.map((r) => <li key={r.id}><b>{r.name}</b> {r.action === 'in' ? `checked in (${METHOD[r.method as keyof typeof METHOD] ?? r.method})` : 'check-in undone'}{r.by !== r.uid && ` by ${r.byName}`} <small className="muted">{fmtDateTime(r.at)}</small></li>)}</ul>
+      )}
+    </details>
+  );
+}
 import { BadgeCheck, CircleAlert, CircleX, ScanLine, Search } from 'lucide-react';
 import { loadEventData, useAdmin, useAdminCol } from './context';
 
@@ -88,6 +109,7 @@ type ScanResult = { kind: 'ok' | 'already' | 'invalid' | 'wrong' | 'missing' | '
 function DoorCheckIn({ attendees }: { attendees: AttendeeDoc[] }) {
   const { event } = useAdmin();
   const toast = useToast();
+  const { user } = useAuth();
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [q, setQ] = useState('');
@@ -99,7 +121,7 @@ function DoorCheckIn({ attendees }: { attendees: AttendeeDoc[] }) {
     if (a.checkedIn) return { kind: 'already', title: `${a.name} is already checked in`, detail: `Since ${fmtTime(a.checkedInAt)}` };
     if (busy.current.has(a.uid)) return { kind: 'already', title: `${a.name} is being checked in…` };
     busy.current.add(a.uid);
-    try { await checkInAttendee(event.id, a.uid, method); return { kind: 'ok', title: `${a.name} checked in`, detail: a.regId ? `Pass ${a.regId}` : undefined }; }
+    try { await checkInAttendee(event.id, a, method, user!); return { kind: 'ok', title: `${a.name} checked in`, detail: a.regId ? `Pass ${a.regId}` : undefined }; }
     catch (x) { return { kind: 'error', title: 'Couldn’t check in', detail: friendlyError(x) }; }
     finally { busy.current.delete(a.uid); }
   }
@@ -113,7 +135,7 @@ function DoorCheckIn({ attendees }: { attendees: AttendeeDoc[] }) {
   }
   const exportSheet = () => downloadCsv(`${event.title}-attendance.csv`, attendees.map((a) => ({
     Name: a.name, Email: a.email, Phone: a.phone, Event: event.title, 'Registration ID': a.regId ?? '',
-    Status: a.checkedIn ? 'Checked in' : 'Not checked in', 'Check-in time': a.checkedIn ? fmtDateTime(a.checkedInAt) : '', 'Check-in method': a.checkedIn ? (a.checkInMethod === 'manual' ? 'Manual' : 'Pass scan') : '',
+    Status: a.checkedIn ? 'Checked in' : 'Not checked in', 'Check-in time': a.checkedIn ? fmtDateTime(a.checkedInAt) : '', 'Check-in method': a.checkedIn ? METHOD[a.checkInMethod ?? 'pass'] : '',
   })), ['Name', 'Email', 'Phone', 'Event', 'Registration ID', 'Status', 'Check-in time', 'Check-in method']);
   const shown = attendees.filter((a) => !q || `${a.name} ${a.email} ${a.regId ?? ''} ${a.phone}`.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => Number(!!b.checkedIn) - Number(!!a.checkedIn) || (b.checkedInAt ?? '').localeCompare(a.checkedInAt ?? '') || a.name.localeCompare(b.name));
@@ -141,14 +163,15 @@ function DoorCheckIn({ attendees }: { attendees: AttendeeDoc[] }) {
           <div key={a.uid} className="list-row">
             <div className="grow"><b>{a.name}</b><small>{a.regId ? `${a.regId} · ` : ''}{a.institution || a.email}</small></div>
             {a.checkedIn
-              ? <><span className="door-in"><BadgeCheck size={15} aria-hidden="true" /> {fmtTime(a.checkedInAt)} · {a.checkInMethod === 'manual' ? 'manual' : 'pass'}</span>
-                  <button className="link" onClick={() => { if (confirm(`Undo ${a.name}’s check-in?`)) undoCheckIn(event.id, a.uid).catch((x) => toast(friendlyError(x), 'err')); }}>Undo</button></>
-              : <button className="btn btn-ghost btn-sm" onClick={() => admit(a, 'manual').then((r) => toast(r.title, r.kind === 'ok' || r.kind === 'already' ? 'ok' : 'err'))}>Check in</button>}
+              ? <><span className="door-in"><BadgeCheck size={15} aria-hidden="true" /> {fmtTime(a.checkedInAt)} · {METHOD[a.checkInMethod ?? 'pass'].toLowerCase()}</span>
+                  <button className="link" onClick={() => { if (confirm(`Undo ${a.name}’s check-in?`)) undoCheckIn(event.id, a, user!).catch((x) => toast(friendlyError(x), 'err')); }}>Undo</button></>
+              : <button className="btn btn-ghost btn-sm" onClick={() => admit(a, 'manual').then((r) => toast(r.title, r.kind === 'ok' || r.kind === 'already' ? 'ok' : 'err'))}>Mark as present</button>}
           </div>
         ))}
         {!shown.length && <p className="muted">{attendees.length ? 'No one matches.' : 'No one has registered yet.'}</p>}
         {!q && shown.length > 30 && <p className="muted">Showing 30 of {shown.length}. Search to find anyone else.</p>}
       </div>
+      <CheckInHistory eventId={event.id} />
       {scanning && (
         <Modal title="Scan passes at the door" onClose={() => setScanning(false)}>
           <Scanner continuous onResult={onScan} />

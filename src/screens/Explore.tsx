@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Avatar, Empty, Icon, Spinner, useToast } from '../components/ui';
+import { Avatar, confetti, Empty, Icon, Spinner, useToast } from '../components/ui';
+import { quickJoin } from '../lib/api';
+import { EVENT_TYPES, TYPE_ORDER, typeInfo, type EventType } from '../lib/eventTypes';
 import { swipe, useSwipes } from '../lib/saved';
 import { useAuth } from '../lib/auth';
 import { fmtRange, fmtTime, friendlyError } from '../lib/format';
@@ -16,7 +18,9 @@ const FLY_MS = 420;
 
 type Decide = (ev: EventDoc, choice: SwipeDoc['choice']) => void;
 
-function Reel({ event, onDecide, savedIcon }: { event: EventDoc; onDecide: Decide; savedIcon: React.RefObject<HTMLAnchorElement | null> }) {
+function Reel({ event, onDecide, onJoin, savedIcon, saved, hint }: { event: EventDoc; onDecide: Decide; onJoin: (ev: EventDoc) => Promise<void>; savedIcon: React.RefObject<HTMLAnchorElement | null>; saved: boolean; hint: boolean }) {
+  const [joining, setJoining] = useState(false);
+  const type = typeInfo(event.eventType);
   const card = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; id: number; axis: '' | 'x' | 'y' } | null>(null);
   const [dx, setDx] = useState(0);
@@ -74,7 +78,18 @@ function Reel({ event, onDecide, savedIcon }: { event: EventDoc; onDecide: Decid
       >
         <span className="stamp-label stamp-save" style={{ opacity: Math.min(1, dx / THRESHOLD) }}>Saved</span>
         <span className="stamp-label stamp-skip" style={{ opacity: Math.min(1, -dx / THRESHOLD) }}>Skip</span>
+        {hint && !dragging && (
+          <div className="swipe-hint" aria-hidden="true">
+            <span><Icon name="back" size={16} /> Swipe left to skip</span>
+            <span>Swipe right to save <span className="flip"><Icon name="back" size={16} /></span></span>
+          </div>
+        )}
         <div className="reel-top">
+          <div className="reel-tags">
+            {type && <span className="type-chip"><span aria-hidden="true">{type.emoji}</span> {type.label}</span>}
+            {saved && <span className="type-chip"><Icon name="bookmark" size={13} /> Saved</span>}
+            <Link className="reel-details" href={`/e/${event.id}`}>Details <Icon name="arrow" size={14} /></Link>
+          </div>
           <span className="tile-tag">{fmtRange(event.startsAt, event.endsAt)} · {fmtTime(event.startsAt)}</span>
           <h2>{event.title}</h2>
           <p>{event.tagline}</p>
@@ -89,7 +104,7 @@ function Reel({ event, onDecide, savedIcon }: { event: EventDoc; onDecide: Decid
           )}
           <div className="reel-actions">
             <button className="round-btn" aria-label={`Skip ${event.title}`} onClick={() => decide('skip')}><Icon name="close" size={26} /></button>
-            <Link className="btn btn-glass btn-sm" href={`/e/${event.id}`}>Details</Link>
+            <button className="btn btn-white reel-join" disabled={joining} onClick={() => { setJoining(true); onJoin(event).finally(() => setJoining(false)); }}>{joining ? 'Joining…' : 'Join event'}</button>
             <button className="round-btn round-save" aria-label={`Save ${event.title}`} onClick={() => decide('save')}><Icon name="bookmark" size={26} /></button>
           </div>
         </div>
@@ -110,16 +125,26 @@ export function Explore() {
   const [gone, setGone] = useState<string[]>([]);
   const [pulse, setPulse] = useState(0);
 
-  // Undiscovered first. Saved and joined events never come back; skipped ones come back only
-  // after everything new has been seen (a second round), without erasing the skip.
-  const upcoming = useMemo(() => published.data.filter((e) => Date.parse(e.endsAt) > Date.now()).sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [published.data]);
-  const seen = useMemo(() => new Set([...swipes.all.map((s) => s.id), ...mine.data.map((m) => m.id), ...gone]), [swipes.all, mine.data, gone]);
+  const [type, setType] = useState<EventType | ''>('');
+  const [loops, setLoops] = useState(0);
+
+  // Undiscovered first, then events skipped earlier (without erasing the skip), then round again
+  // through everything still coming up, so Explore never runs dry while there are events.
+  const upcoming = useMemo(() => published.data.filter((e) => Date.parse(e.endsAt) > Date.now() && (!type || e.eventType === type)).sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [published.data, type]);
+  const joinedIds = useMemo(() => new Set(mine.data.map((m) => m.id)), [mine.data]);
+  const seen = useMemo(() => new Set([...swipes.all.map((s) => s.id), ...joinedIds, ...gone]), [swipes.all, joinedIds, gone]);
   const fresh = useMemo(() => upcoming.filter((e) => !seen.has(e.id)), [upcoming, seen]);
   const skippedIds = useMemo(() => new Set(swipes.skipped.map((s) => s.id)), [swipes.skipped]);
-  const joinedIds = useMemo(() => new Set(mine.data.map((m) => m.id)), [mine.data]);
   const secondRound = useMemo(() => upcoming.filter((e) => skippedIds.has(e.id) && !joinedIds.has(e.id) && !gone.includes(e.id)), [upcoming, skippedIds, joinedIds, gone]);
-  const reels = fresh.length ? fresh : secondRound;
-  const again = !fresh.length && secondRound.length > 0;
+  const pool = useMemo(() => upcoming.filter((e) => !joinedIds.has(e.id)), [upcoming, joinedIds]);
+  const looped = useMemo(() => pool.filter((e) => !gone.includes(e.id)), [pool, gone]);
+  const reels = fresh.length ? fresh : secondRound.length ? secondRound : looped;
+  const stage = fresh.length ? 'new' : secondRound.length ? 'skipped' : 'loop';
+  // Everything has gone by: start the loop again (only events already loaded, no new reads).
+  useEffect(() => {
+    if (!published.loading && !swipes.loading && !reels.length && pool.length) { setGone([]); setLoops((n) => n + 1); }
+  }, [published.loading, swipes.loading, reels.length, pool.length]);
+  const types = useMemo(() => TYPE_ORDER.filter((t) => published.data.some((e) => e.eventType === t && Date.parse(e.endsAt) > Date.now())), [published.data]);
   // The same count as the profile and the Saved page.
   const savedCount = swipes.saved.length;
 
@@ -127,11 +152,21 @@ export function Explore() {
     if (!user) { nav.push(`/login?next=${encodeURIComponent('/explore')}`); return; }
     setGone((g) => [...g, ev.id]);
     if (choice === 'save') setPulse((n) => n + 1);
+    // Already saved: skipping it on a later round never unsaves it, and saving again writes nothing.
+    if (swipes.isSaved(ev.id)) return;
     swipe(ev, user, choice).catch((x) => {
       setGone((g) => g.filter((id) => id !== ev.id));
       toast(friendlyError(x), 'err');
     });
   };
+  async function join(ev: EventDoc) {
+    if (!user) { nav.push(`/login?next=${encodeURIComponent(`/e/${ev.id}`)}`); return; }
+    try {
+      const r = await quickJoin(ev.id, user);
+      if (r.joined) { confetti(); toast(`You’re in: ${ev.title}`); }
+      nav.push(`/e/${ev.id}`);
+    } catch (x) { toast(friendlyError(x), 'err'); }
+  }
 
   // Left and right arrows act on the reel in view; up and down scroll natively.
   useEffect(() => {
@@ -158,22 +193,28 @@ export function Explore() {
           {savedCount > 0 && <i>{savedCount}</i>}
         </Link>
       </header>
+      {types.length > 0 && (
+        <div className="type-filter" role="tablist" aria-label="Event type">
+          <button role="tab" aria-selected={!type} className={!type ? 'on' : ''} onClick={() => { setType(''); setGone([]); }}>All</button>
+          {types.map((t) => <button key={t} role="tab" aria-selected={type === t} className={type === t ? 'on' : ''} onClick={() => { setType(t); setGone([]); }}><span aria-hidden="true">{EVENT_TYPES[t].emoji}</span> {EVENT_TYPES[t].label}</button>)}
+        </div>
+      )}
       {busy ? <div className="center"><Spinner /></div> : reels.length === 0 ? (
         <div className="center">
-          <Empty title="You’re all caught up">
-            New events will show up here.
+          <Empty title={type ? `No upcoming ${EVENT_TYPES[type].label.toLowerCase()}s` : mine.data.length ? 'You’ve joined everything coming up' : 'No upcoming events yet'}>
+            {type ? 'Try another type.' : 'New events will show up here.'}
             <div className="row-center">
+              {type && <button className="btn btn-ghost btn-sm" onClick={() => setType('')}>Show all types</button>}
               <Link className="btn btn-ink btn-sm" href="/saved">See saved</Link>
-              {user && swipes.skipped.length > 0 && gone.length > 0 && <button className="btn btn-ghost btn-sm" onClick={() => setGone([])}>Go through skipped events again</button>}
             </div>
           </Empty>
         </div>
       ) : (
         <>
           <div className="reels" ref={scroller}>
-            {reels.map((e) => <Reel key={e.id} event={e} onDecide={decide} savedIcon={savedIcon} />)}
+            {reels.map((e, i) => <Reel key={`${loops}-${e.id}`} event={e} onDecide={decide} onJoin={join} savedIcon={savedIcon} saved={swipes.isSaved(e.id)} hint={i === 0 && gone.length === 0 && loops === 0} />)}
           </div>
-          <p className="reel-hint">{again ? 'You’ve seen everything new. These are events you skipped earlier. · ' : ''}Scroll for more · Right to save · Left to skip</p>
+          <p className="reel-hint">{stage === 'skipped' ? 'You’ve seen everything new. These are events you skipped earlier. · ' : stage === 'loop' && (loops > 0 || gone.length > 0 || swipes.all.length > 0) ? 'Round again through what’s coming up. · ' : ''}Scroll for more · Right to save · Left to skip</p>
         </>
       )}
     </div>

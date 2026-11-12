@@ -20,8 +20,14 @@ export function routeFromScan(text: string, appOrigin: string): string | null {
   try { url = new URL(text.trim()); } catch { return null; }
   if (url.origin !== appOrigin) return null;
   const ok = /^\/join\/[\w-]+$/.test(url.pathname)
+    // The event's own (private) link, and its speaker link.
+    || /^\/e\/[\w-]+\/?$/.test(url.pathname)
     || /^\/e\/[\w-]+\/connect\/[\w-]+$/.test(url.pathname)
-    || /^\/e\/[\w-]+\/c\/[\w-]+$/.test(url.pathname);
+    || /^\/e\/[\w-]+\/c\/[\w-]+$/.test(url.pathname)
+    // Gather Pulse: a live session or survey.
+    || /^\/pulse\/join\/[A-Z0-9]+$/i.test(url.pathname)
+    || /^\/pulse\/survey\/[\w-]+$/.test(url.pathname)
+    || (url.pathname === '/speaker' && /^\?event=[\w-]+$/.test(url.search));
   return ok ? url.pathname + url.search : null;
 }
 

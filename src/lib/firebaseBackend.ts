@@ -40,7 +40,7 @@ export function createFirebaseBackend(): Backend {
   const buildQuery = (path: string, w: Where, opts?: QueryOpts): Query => {
     const parts = [...w.map(([f, v]) => where(f, '==', v))];
     const shaped = [
-      ...(opts?.orderBy ? [orderBy(opts.orderBy), orderBy(documentId())] : []),
+      ...(opts?.orderBy ? [orderBy(opts.orderBy, opts.desc ? 'desc' : 'asc'), orderBy(documentId(), opts.desc ? 'desc' : 'asc')] : []),
       ...(opts?.orderBy && opts.after ? [startAfter(...opts.after)] : []),
       ...(opts?.limit ? [limit(opts.limit)] : []),
     ];

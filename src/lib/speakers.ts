@@ -1,4 +1,4 @@
-import { backend, type WriteOp } from './backend';
+import { backend, isDemo, type WriteOp } from './backend';
 import type { AppUser, AttendeeDoc, EventDoc, FeedbackOwnerDoc, MembershipDoc, RoleDoc, SpeakerCategory, SpeakerCodeDoc, SpeakerDoc, SpeakerFeedbackDoc } from './types';
 
 export const CATEGORIES: Record<SpeakerCategory, string> = { featured: 'Featured', keynote: 'Keynote', guest: 'Guest', panelist: 'Panelist', regular: 'Regular' };
@@ -52,6 +52,63 @@ export async function checkSpeakerCode(raw: string): Promise<CodeCheck> {
   return { ok: true, code, c, event };
 }
 
+/* ---------- Four-digit speaker code (one per event) ---------- */
+
+export interface SpeakerPinDoc { id: string; pin: string; revoked: boolean; expiresAt: string; eventTitle: string; createdAt?: string }
+export interface SpeakerTryDoc { id: string; pin: string; n: number; ok: boolean; at?: string }
+export const MAX_TRIES = 10;
+const WEAK = new Set(['0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '1234', '4321', '1212', '2580', '0123', '9876']);
+
+/** A random four-digit code, never an easy one like 1234 or 0000. */
+export function newPin() {
+  for (;;) {
+    const n = crypto.getRandomValues(new Uint16Array(1))[0] % 10000;
+    const pin = String(n).padStart(4, '0');
+    if (!WEAK.has(pin)) return pin;
+  }
+}
+export const cleanPin = (raw: string) => raw.replace(/\D/g, '').slice(0, 4);
+
+/** Makes (or changes) the event's speaker code. The old code stops working at once. */
+export const setSpeakerPin = (ev: Pick<EventDoc, 'id' | 'title'>, days: number) =>
+  backend.write([{ type: 'set', path: `speakerPins/${ev.id}`, data: {
+    pin: newPin(), revoked: false, expiresAt: new Date(Date.now() + days * 86_400_000), eventTitle: ev.title, createdAt: backend.now(),
+  } }]);
+export const switchOffPin = (eventId: string) => backend.write([{ type: 'set', path: `speakerPins/${eventId}`, merge: true, data: { revoked: true } }]);
+/** Lets people who used all their tries guess again. */
+export const resetTries = (eventId: string, uids: string[]) => backend.write(uids.map((u) => ({ type: 'delete' as const, path: `events/${eventId}/speakerTries/${u}` })));
+
+export type PinResult = { ok: true } | { ok: false; reason: string; left: number };
+
+/**
+ * Checks a four-digit code for one event. The guess is saved first (which uses up a try), then
+ * marked correct; the security rules only allow that when it matches the event's code.
+ */
+export async function tryPin(user: AppUser, eventId: string, raw: string): Promise<PinResult> {
+  const pin = cleanPin(raw);
+  const path = `events/${eventId}/speakerTries/${user.uid}`;
+  const prev = await backend.getDoc<SpeakerTryDoc>(path).catch(() => null);
+  if (prev?.ok && prev.pin === pin) return { ok: true };
+  const n = (prev?.n ?? 0) + 1;
+  if (pin.length !== 4) return { ok: false, reason: 'The speaker code is four digits.', left: MAX_TRIES - (prev?.n ?? 0) };
+  if (n > MAX_TRIES) return { ok: false, reason: `You’ve used all ${MAX_TRIES} tries for this event. Ask the organiser to reset them.`, left: 0 };
+  const left = MAX_TRIES - n;
+  const wrong = (): PinResult => ({ ok: false, reason: left ? `That code isn’t right. ${left} ${left === 1 ? 'try' : 'tries'} left.` : `That code isn’t right, and that was your last try. Ask the organiser to reset your tries.`, left });
+  await backend.write([{ type: 'set', path, data: { pin, n, ok: false, at: backend.now() } }]);
+  if (isDemo) {
+    // Demo mode has no security rules, so check here the way the rules would.
+    const p = await backend.getDoc<SpeakerPinDoc>(`speakerPins/${eventId}`).catch(() => null);
+    if (!p || p.revoked || Date.parse(p.expiresAt) < Date.now() || p.pin !== pin) return wrong();
+  }
+  try { await backend.write([{ type: 'set', path, merge: true, data: { ok: true } }]); }
+  catch { return wrong(); }
+  return { ok: true };
+}
+
+/** Has this person already entered the right code for this event (and is it still current)? */
+export const verifiedTry = (uid: string, eventId: string) =>
+  backend.getDoc<SpeakerTryDoc>(`events/${eventId}/speakerTries/${uid}`).then((t) => !!t?.ok).catch(() => false);
+
 /** The speaker profile someone creates from their own details when they aren't on the organiser's list. */
 export interface OwnSpeakerProfile { name: string; role: string; organisation: string; topic: string; bio: string; photo: string; linkedin: string; website: string }
 
@@ -60,8 +117,10 @@ export interface OwnSpeakerProfile { name: string; role: string; organisation: s
  * claimed it yet), or create a speaker profile from the person's own details. The same account
  * stays an attendee; the security rules check the code and that the speaker profile is theirs.
  */
-export async function becomeSpeaker(user: AppUser, chk: Extract<CodeCheck, { ok: true }>, choice: { speakerId: string; name: string } | { own: OwnSpeakerProfile }): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const { code, c, event: ev } = chk;
+export type SpeakerGrant = { event: EventDoc; code: string; pulse: boolean };
+export async function becomeSpeaker(user: AppUser, chk: SpeakerGrant | Extract<CodeCheck, { ok: true }>, choice: { speakerId: string; name: string } | { own: OwnSpeakerProfile }): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const { code, event: ev } = chk;
+  const pulse = 'c' in chk ? chk.c.pulse : chk.pulse;
   const speakerId = 'own' in choice ? user.uid : choice.speakerId;
   const speakerName = 'own' in choice ? choice.own.name : choice.name;
   const already = await backend.getDoc<AttendeeDoc>(`events/${ev.id}/attendees/${user.uid}`).catch(() => null);
@@ -78,10 +137,10 @@ export async function becomeSpeaker(user: AppUser, chk: Extract<CodeCheck, { ok:
   }
   ops.push(
     { type: 'set', path: `events/${ev.id}/roles/${user.uid}`, data: {
-      uid: user.uid, name: user.name, email: user.email, roles: ['speaker'], speakerId, status: 'verified', active: true, pulse: c.pulse, code, at: backend.now(),
+      uid: user.uid, name: user.name, email: user.email, roles: ['speaker'], speakerId, status: 'verified', active: true, pulse, code, at: backend.now(),
     } },
     { type: 'set', path: `users/${user.uid}/speaking/${ev.id}`, data: {
-      eventId: ev.id, speakerId, speakerName, eventTitle: ev.title, startsAt: ev.startsAt, pulse: c.pulse,
+      eventId: ev.id, speakerId, speakerName, eventTitle: ev.title, startsAt: ev.startsAt, pulse,
     } },
   );
   // A speaker is an attendee too: join them if they haven't joined (works for invite-only and full events).
@@ -93,7 +152,7 @@ export async function becomeSpeaker(user: AppUser, chk: Extract<CodeCheck, { ok:
     );
   }
   try { await backend.write(ops); }
-  catch { return { ok: false, reason: 'own' in choice ? 'That didn’t work. The code may have just been changed.' : 'That speaker profile is already linked to another account. Choose “I’m not on the list” or ask the organiser.' }; }
+  catch { return { ok: false, reason: 'own' in choice ? 'That didn’t work. The organiser may have just changed the speaker code: enter the new one.' : 'That speaker profile is already linked to another account. Choose “I’m not on the list” or ask the organiser.' }; }
   return { ok: true };
 }
 

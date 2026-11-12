@@ -1,3 +1,4 @@
+import type { EventType } from './eventTypes';
 export type Accent = 'blue' | 'amber' | 'violet' | 'lime' | 'rose';
 
 export interface Question {
@@ -39,6 +40,10 @@ export interface EventDoc {
   expectedAttendees?: number;
   /** Maximum registrations, 0 or missing for no limit. Enforced by the security rules with a counter. */
   capacity?: number;
+  /** Workshop, conference, hackathon… Older events have none. */
+  eventType?: EventType;
+  /** Answers to the questions for this event type (see eventTypes.ts). */
+  typeDetails?: Record<string, string>;
   lineup: LineupItem[];
   questions: Question[];
   createdAt?: string;
@@ -175,9 +180,14 @@ export interface AttendeeDoc {
   /** Random registration ID shown on the pass and in its QR code (no personal details in the QR). */
   regId?: string;
   /** Event check-in at the door. Time comes from the server. */
+  /** Shares email and phone with other attendees on the People list. */
+  shareContact?: boolean;
   checkedIn?: boolean;
   checkedInAt?: string;
-  checkInMethod?: 'pass' | 'manual';
+  checkInMethod?: 'pass' | 'manual' | 'self';
+  /** Who checked them in: the organiser's account, or their own for a self scan. */
+  checkedInBy?: string;
+  checkInSession?: string;
 }
 
 /** Attendee-only event details, kept apart from the public event record. */
@@ -185,7 +195,7 @@ export interface AttendeeDoc {
 export interface EventInfoDoc { id: string; wifiName: string; wifiPassword: string; helplineName?: string; helplinePhone?: string; notes?: string; helpdesk?: HelpContact[] }
 
 /** What other attendees can see about a person. Never includes email or phone. */
-export interface DirectoryDoc { id: string; uid: string; name: string; institution: string; department: string; designation: string; photo?: string }
+export interface DirectoryDoc { id: string; uid: string; name: string; institution: string; department: string; designation: string; photo?: string; /** Only when they chose to share contact details. */ email?: string; phone?: string }
 
 /** One swipe in Explore, kept with enough event detail to list it without another read. */
 export interface SwipeDoc { id: string; choice: 'save' | 'skip'; title: string; tagline: string; startsAt: string; endsAt: string; venue: string; color: Accent; bannerThumb?: string; at?: string }

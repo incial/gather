@@ -1,4 +1,5 @@
 import { backend } from './backend';
+import { ensureUsername } from './username';
 import { webUrl } from './links';
 import type { AppUser, SpeakerLink } from './types';
 
@@ -23,10 +24,12 @@ export interface PublicProfile {
   links: SpeakerLink[];
   /** public: visible to signed-in Gather users. private: only you (and organisers of events you join). */
   visibility: 'public' | 'private';
+  /** Public @username, unique across Gather (see username.ts). Older profiles may not have one yet. */
+  username?: string;
   updatedAt?: string;
 }
 
-export const PROFILE_FIELDS = ['profileId', 'name', 'photo', 'photoSource', 'headline', 'bio', 'organisation', 'designation', 'education', 'skills', 'interests', 'location', 'linkedin', 'website', 'portfolio', 'links', 'visibility', 'updatedAt'] as const;
+export const PROFILE_FIELDS = ['profileId', 'name', 'photo', 'photoSource', 'headline', 'bio', 'organisation', 'designation', 'education', 'skills', 'interests', 'location', 'linkedin', 'website', 'portfolio', 'links', 'visibility', 'username', 'updatedAt'] as const;
 export const LIMITS = { name: 80, headline: 120, bio: 1200, short: 120, list: 15, item: 40, links: 8, photo: 200_000 };
 
 const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -49,8 +52,10 @@ export async function ensureProfile(user: AppUser) {
   const existing = await backend.getDoc<PublicProfile>(path);
   if (!existing) {
     await backend.write([{ type: 'set', path, data: { ...blankProfile(user), updatedAt: backend.now() } }]);
+    await ensureUsername(user, { name: blankProfile(user).name }).catch(() => {});
     return;
   }
+  if (!existing.username) await ensureUsername(user, existing).catch(() => {});
   if (existing.photoSource !== 'upload' && user.photo && existing.photo !== user.photo) {
     await backend.write([{ type: 'set', path, merge: true, data: { photo: user.photo, photoSource: 'google' } }]);
   }
@@ -94,7 +99,8 @@ export function cleanProfile(p: Omit<PublicProfile, 'id'>): { error: string } | 
 
 export async function saveProfile(uid: string, p: Omit<PublicProfile, 'id' | 'updatedAt'>, phone: string) {
   await backend.write([
-    { type: 'set', path: `profiles/${uid}`, data: { ...p, updatedAt: backend.now() } },
+    // Merged so the username (saved separately, with its uniqueness check) is kept.
+    { type: 'set', path: `profiles/${uid}`, merge: true, data: { ...p, updatedAt: backend.now() } },
     // Phone stays private, next to the details used to fill in event registration.
     { type: 'set', path: `users/${uid}/profile/me`, merge: true, data: { name: p.name, phone: phone.trim(), institution: p.organisation, designation: p.designation } },
   ]);

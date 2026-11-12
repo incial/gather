@@ -3,7 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Scanner } from '../components/Scanner';
-import { DemoBanner, ErrorNote, GlobalNav, Icon, Spinner } from '../components/ui';
+import Link from 'next/link';
+import { AccountMenu } from '../components/AccountMenu';
+import { DemoBanner, ErrorNote, GlobalNav, Icon, Logo, Spinner } from '../components/ui';
 import { findEventByCode } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { friendlyError } from '../lib/format';
@@ -32,12 +34,13 @@ export function JoinEvent() {
   const onScan = (text: string) => {
     const route = routeFromScan(text, window.location.origin);
     if (route) nav.push(route);
-    else setErr('That QR code isn’t a Gather event code.');
+    else setErr('That QR code isn’t a Gather code. Scan the event’s QR from the organiser, or type the 6-digit number.');
   };
 
   return (
     <div className="dash">
       <DemoBanner />
+      <header className="top"><Logo /><AccountMenu /></header>
       <main className="dash-main narrow-main">
         <h1 className="hello">Join an event</h1>
         <section className="tile tile-blue join-tile">
@@ -61,6 +64,10 @@ export function JoinEvent() {
           </button>
         )}
         <ErrorNote text={err} />
+        <div className="join-more">
+          <Link href="/speaker" className="join-more-card"><span aria-hidden="true">🎤</span><span className="grow"><b>I’m a speaker</b><small>Enter your event’s 4-digit speaker code</small></span><Icon name="arrow" size={18} /></Link>
+          <Link href="/pulse/join" className="join-more-card"><span aria-hidden="true">📊</span><span className="grow"><b>Joining a live poll?</b><small>Use the 6-letter code on the screen</small></span><Icon name="arrow" size={18} /></Link>
+        </div>
       </main>
       <GlobalNav />
     </div>

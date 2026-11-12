@@ -6,6 +6,8 @@ import { Avatar, DemoBanner, ErrorNote, Field, GlobalNav, Icon, LoadError, Spinn
 import { useAuth } from '../lib/auth';
 import { backend } from '../lib/backend';
 import { friendlyError } from '../lib/format';
+import { UsernameField, type UsernameState } from '../components/UsernameField';
+import { claimUsername } from '../lib/username';
 import { blankProfile, cleanProfile, completion, LIMITS, saveProfile, shrinkPhoto, toList, type PublicProfile } from '../lib/profile';
 
 type Draft = Omit<PublicProfile, 'id'> & { phone: string; skillsText: string; interestsText: string };
@@ -19,6 +21,7 @@ export function ProfileEdit() {
   const [loadErr, setLoadErr] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [uname, setUname] = useState<UsernameState>({ value: '', ok: true });
 
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/profile/edit'); }, [loading, user, nav]);
   useEffect(() => {
@@ -53,9 +56,17 @@ export function ProfileEdit() {
     const { phone, skillsText: _s, interestsText: _i, id: _id, ...rest } = live as Draft & { id?: string };
     const res = cleanProfile(rest);
     if ('error' in res) { setErr(res.error); return; }
+    const wantName = uname.value && uname.value !== (f!.username ?? '');
+    if (wantName && !uname.ok) { setErr('Choose an available username, or keep your current one.'); return; }
     setErr(''); setBusy(true);
-    try { await saveProfile(user!.uid, res.value, phone); toast('Profile saved'); nav.push('/profile'); }
-    catch (x) { setErr(friendlyError(x)); setBusy(false); }
+    try {
+      await saveProfile(user!.uid, res.value, phone);
+      if (wantName) {
+        try { await claimUsername(user!.uid, uname.value, f!.username || undefined); }
+        catch { setErr(`@${uname.value} was just taken by someone else. Pick another; the rest of your profile is saved.`); setBusy(false); return; }
+      }
+      toast('Profile saved'); nav.push('/profile');
+    } catch (x) { setErr(friendlyError(x)); setBusy(false); }
   }
 
   return (
@@ -79,6 +90,7 @@ export function ProfileEdit() {
               <input ref={file} type="file" accept="image/*" hidden onChange={photo} />
             </div>
             <Field label="Full name"><input required maxLength={LIMITS.name} value={f.name} onChange={set('name')} autoComplete="name" /></Field>
+            <UsernameField uid={user.uid} current={f.username ?? ''} onChange={setUname} />
             <Field label="Headline" hint="One line about you, e.g. Assistant Professor of Physics · IEDC Nodal Officer"><input maxLength={LIMITS.headline} value={f.headline} onChange={set('headline')} /></Field>
             <div className="two">
               <Field label="College or organisation"><input maxLength={LIMITS.short} value={f.organisation} onChange={set('organisation')} autoComplete="organization" /></Field>

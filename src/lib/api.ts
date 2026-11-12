@@ -62,13 +62,16 @@ export const unsaveEvent = async (eventId: string, uid: string) => { await unsav
 export const clearSkipped = (uid: string, ids: string[]) =>
   backend.write(ids.map((id) => ({ type: 'delete' as const, path: `users/${uid}/swipes/${id}` })));
 
-export type Profile = Pick<AttendeeDoc, 'name' | 'phone' | 'institution' | 'department' | 'designation'>;
+export type Profile = Pick<AttendeeDoc, 'name' | 'phone' | 'institution' | 'department' | 'designation'> & { shareContact?: boolean };
 
-/** The People entry: deliberately only these fields, so email and phone stay private. */
-function directoryOp(eventId: string, uid: string, p: Profile, listed: boolean, photo?: string): WriteOp {
+/** The People entry: deliberately only these fields. Email and phone only when the person chose to share them. */
+function directoryOp(eventId: string, uid: string, p: Profile, listed: boolean, photo: string | undefined, email: string): WriteOp {
   const path = `events/${eventId}/directory/${uid}`;
   if (!listed) return { type: 'delete', path };
-  return { type: 'set', path, data: { uid, name: p.name, institution: p.institution, department: p.department, designation: p.designation, photo: photo ?? '' } };
+  return { type: 'set', path, data: {
+    uid, name: p.name, institution: p.institution, department: p.department, designation: p.designation, photo: photo ?? '',
+    ...(p.shareContact ? { email, phone: p.phone } : {}),
+  } };
 }
 
 export async function joinEvent(ev: EventDoc, user: AppUser, profile: Profile, source: AttendeeDoc['source'], listed: boolean) {
@@ -84,18 +87,18 @@ export async function joinEvent(ev: EventDoc, user: AppUser, profile: Profile, s
 
 const writeJoin = (ev: EventDoc, user: AppUser, profile: Profile, source: AttendeeDoc['source'], listed: boolean, membership: Omit<MembershipDoc, 'id'>) =>
   backend.write([
-    { type: 'set', path: `events/${ev.id}/attendees/${user.uid}`, data: { ...profile, uid: user.uid, email: user.email, photo: user.photo ?? '', source, listed, joinedAt: backend.now(), regId: newRegId() } },
+    { type: 'set', path: `events/${ev.id}/attendees/${user.uid}`, data: { ...profile, shareContact: !!profile.shareContact, uid: user.uid, email: user.email, photo: user.photo ?? '', source, listed, joinedAt: backend.now(), regId: newRegId() } },
     ...((ev.capacity ?? 0) > 0 ? [{ type: 'set' as const, path: `events/${ev.id}/counters/attendees`, merge: true, data: { n: backend.inc(1) } }] : []),
     { type: 'set', path: `users/${user.uid}/events/${ev.id}`, data: membership },
     { type: 'set', path: profilePath(user.uid), data: { ...profile, listed } },
-    ...(listed ? [directoryOp(ev.id, user.uid, profile, true, user.photo)] : []),
+    ...(listed ? [directoryOp(ev.id, user.uid, profile, true, user.photo, user.email)] : []),
   ]);
 
 export const updateProfileFor = (eventId: string, a: AttendeeDoc, profile: Profile, listed: boolean) =>
   backend.write([
-    { type: 'set', path: `events/${eventId}/attendees/${a.uid}`, data: { ...profile, listed }, merge: true },
+    { type: 'set', path: `events/${eventId}/attendees/${a.uid}`, data: { ...profile, shareContact: !!profile.shareContact, listed }, merge: true },
     { type: 'set', path: profilePath(a.uid), data: { ...profile, listed } },
-    directoryOp(eventId, a.uid, profile, listed, a.photo),
+    directoryOp(eventId, a.uid, profile, listed, a.photo, a.email),
   ]);
 
 /* ---------- Check-in ---------- */
@@ -106,14 +109,24 @@ export async function checkIn(eventId: string, sessionId: string, me: AttendeeDo
   const id = `${sessionId}_${me.uid}`;
   const path = `events/${eventId}/attendance/${id}`;
   if (await backend.getDoc(path)) return 'already';
+  const session: WriteOp = { type: 'set', path, data: {
+    uid: me.uid, sessionId, name: me.name, email: me.email, method: 'qr', key: key.trim().toUpperCase(), at: backend.now(),
+  } };
+  // The first scan of the event also marks you present at the event (same record your pass and the organiser use).
+  const fresh = await backend.getDoc<AttendeeDoc>(`events/${eventId}/attendees/${me.uid}`).catch(() => null);
+  const present: WriteOp[] = fresh && !fresh.checkedIn ? [
+    { type: 'set', path: `events/${eventId}/attendees/${me.uid}`, merge: true, data: { checkedIn: true, checkedInAt: backend.now(), checkInMethod: 'self', checkedInBy: me.uid, checkInSession: sessionId } },
+    { type: 'set', path: `events/${eventId}/checkinLog/${backend.newId()}`, data: { uid: me.uid, name: me.name, action: 'in', method: 'self', by: me.uid, byName: me.name, at: backend.now() } },
+  ] : [];
   try {
-    await backend.write([{ type: 'set', path, data: {
-      uid: me.uid, sessionId, name: me.name, email: me.email, method: 'qr', key: key.trim().toUpperCase(), at: backend.now(),
-    } }]);
+    await backend.write([session, ...present]);
     return 'ok';
   } catch (e) {
-    if ((e as { code?: string }).code === 'permission-denied') return 'expired';
-    throw e;
+    if ((e as { code?: string }).code !== 'permission-denied') throw e;
+    if (!present.length) return 'expired';
+    // If marking event attendance was refused, still record the session check-in on its own.
+    try { await backend.write([session]); return 'ok'; }
+    catch (e2) { if ((e2 as { code?: string }).code === 'permission-denied') return 'expired'; throw e2; }
   }
 }
 
@@ -185,8 +198,11 @@ export const updateEvent = (id: string, patch: Partial<EventDoc>) =>
  * attendee's copy in My events and Explore saves, so it disappears for everyone straight away.
  */
 export async function deleteEvent(id: string) {
-  const subs = ['sessions', 'speakers', 'sessionKeys', 'preregistered', 'attendees', 'directory', 'private', 'attendance', 'feedback', 'connections', 'saved', 'sessionFeedback', 'assets', 'assetFiles', 'certIndex', 'media', 'roles', 'speakerFeedback', 'speakerFeedbackOwners', 'counters'];
+  const subs = ['sessions', 'speakers', 'sessionKeys', 'preregistered', 'attendees', 'directory', 'private', 'attendance', 'feedback', 'connections', 'saved', 'sessionFeedback', 'assets', 'assetFiles', 'certIndex', 'media', 'roles', 'speakerFeedback', 'speakerFeedbackOwners', 'counters', 'announcements', 'checkinLog', 'speakerTries'];
   const ops: WriteOp[] = [];
+  // Marks the event as being deleted, which also lets its check-in history be removed.
+  await backend.write([{ type: 'set', path: `events/${id}`, merge: true, data: { deleting: true } }]);
+  ops.push({ type: 'delete', path: `speakerPins/${id}` });
   // People's own copies first, while the attendee and saved lists still exist.
   const [joined, savers] = await Promise.all([
     backend.getCol<{ id: string }>(`events/${id}/attendees`),
@@ -265,12 +281,20 @@ export async function syncCapacityCounter(eventId: string) {
   await backend.write([{ type: 'set', path: `events/${eventId}/counters/attendees`, data: { n } }]);
 }
 
-/** Organiser check-in at the door, by pass QR or by hand. The time comes from the server. */
-export async function checkInAttendee(eventId: string, uid: string, method: 'pass' | 'manual') {
-  await backend.write([{ type: 'set', path: `events/${eventId}/attendees/${uid}`, merge: true, data: { checkedIn: true, checkedInAt: backend.now(), checkInMethod: method } }]);
+/**
+ * Organiser check-in at the door, by pass QR or by hand ("Mark as present"). One record per attendee
+ * per event (their attendee record), which their pass reads too. Each change is added to the history.
+ */
+export async function checkInAttendee(eventId: string, a: Pick<AttendeeDoc, 'uid' | 'name'>, method: 'pass' | 'manual', by: AppUser) {
+  await backend.write([
+    { type: 'set', path: `events/${eventId}/attendees/${a.uid}`, merge: true, data: { checkedIn: true, checkedInAt: backend.now(), checkInMethod: method, checkedInBy: by.uid } },
+    { type: 'set', path: `events/${eventId}/checkinLog/${backend.newId()}`, data: { uid: a.uid, name: a.name, action: 'in', method, by: by.uid, byName: by.name || by.email, at: backend.now() } },
+  ]);
 }
-export const undoCheckIn = (eventId: string, uid: string) =>
-  backend.write([{ type: 'set', path: `events/${eventId}/attendees/${uid}`, merge: true, data: { checkedIn: false, checkedInAt: null, checkInMethod: null } }]);
+export const undoCheckIn = (eventId: string, a: Pick<AttendeeDoc, 'uid' | 'name'>, by: AppUser) => backend.write([
+  { type: 'set', path: `events/${eventId}/attendees/${a.uid}`, merge: true, data: { checkedIn: false, checkedInAt: null, checkInMethod: null, checkedInBy: null, checkInSession: null } },
+  { type: 'set', path: `events/${eventId}/checkinLog/${backend.newId()}`, data: { uid: a.uid, name: a.name, action: 'undo', method: '', by: by.uid, byName: by.name || by.email, at: backend.now() } },
+]);
 
 /** Gives older registrations a pass ID the first time their pass is opened. */
 export const ensureRegId = (eventId: string, uid: string) =>

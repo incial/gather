@@ -8,13 +8,13 @@ import { friendlyError } from '../lib/format';
 import { AccountMenu } from '../components/AccountMenu';
 import { ProfileDetails, ProfileHero } from '../components/ProfileCard';
 import { CountUp, PeopleStack, Reveal } from '../components/Fun';
-import { badges, level } from '../lib/persona';
 import { DemoBanner, ErrorNote, GlobalNav, Icon, LoadError, Logo, Modal, Spinner, useToast } from '../components/ui';
 import type { AppUser } from '../lib/types';
 import { useAuth } from '../lib/auth';
 import { useCol, useDoc } from '../lib/live';
 import { useMode } from '../lib/mode';
 import { completion, ensureProfile, type PublicProfile } from '../lib/profile';
+import { ensureUsername } from '../lib/username';
 import type { CertificateDoc, MembershipDoc } from '../lib/types';
 import { SavedList } from './Saved';
 import { useSwipes } from '../lib/saved';
@@ -34,6 +34,9 @@ export function Profile() {
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/profile'); }, [loading, user, nav]);
   // If the profile record is missing (first visit on a new device, or it was removed), create it instead of waiting.
   useEffect(() => { if (user && !prof.loading && !prof.error && !prof.data) ensureProfile(user).catch(() => {}); }, [user, prof.loading, prof.error, prof.data]);
+  // Older profiles get a username the first time they're opened.
+  const needsName = !!prof.data && !prof.data.username;
+  useEffect(() => { if (user && needsName && prof.data) ensureUsername(user, prof.data).catch(() => {}); }, [user, needsName, prof.data]);
   if (loading || !user) return <div className="center"><Spinner /></div>;
 
   const p = prof.data;
@@ -50,8 +53,6 @@ export function Profile() {
   };
 
   const activity = { events: mine.data.length, saved, people: pings.people, certificates: certs.data.length, profile: done?.percent ?? 0 };
-  const lv = level(activity);
-  const got = badges(activity);
   const friends = pings.connections.map((x) => (x.fromUid === user.uid
     ? { uid: x.toUid, name: x.toName, photo: x.toPhoto || undefined, sub: x.eventTitle }
     : { uid: x.fromUid, name: x.fromName, photo: x.fromPhoto || undefined, sub: x.eventTitle }))
@@ -99,27 +100,6 @@ export function Profile() {
             </Reveal>
           ))}
         </div>
-
-        <Reveal as="section" className="level" aria-labelledby="lv-title">
-          <div className="level-top">
-            <span className="level-badge" aria-hidden="true">{lv.n}</span>
-            <div className="grow">
-              <small>Level {lv.n} · {lv.points} points</small>
-              <h2 id="lv-title">{lv.name}</h2>
-            </div>
-          </div>
-          <div className="pbar on-dark" role="progressbar" aria-valuenow={lv.progress} aria-valuemin={0} aria-valuemax={100} aria-label="Progress to the next level"><i style={{ width: `${lv.progress}%` }} /></div>
-          <small className="level-next">{lv.next ? `${lv.next.need} points to ${lv.next.name}. Join events, connect with people and fill in your profile.` : 'Top level reached. You’re a Gather legend.'}</small>
-          <ul className="badges" aria-label="Badges">
-            {got.map((b) => (
-              <li key={b.id} className={b.got ? 'got' : ''} title={b.got ? b.title : `Locked: ${b.hint}`}>
-                <span className="badge-emoji" aria-hidden="true">{b.got ? b.emoji : '🔒'}</span>
-                <b>{b.title}</b>
-                <small>{b.got ? 'Unlocked' : b.hint}</small>
-              </li>
-            ))}
-          </ul>
-        </Reveal>
 
         <Reveal as="section" className="people-peek">
           <div className="row-between">
