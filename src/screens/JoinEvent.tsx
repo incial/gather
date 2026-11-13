@@ -18,7 +18,8 @@ export function JoinEvent() {
   const [code, setCode] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  // Opened from Home's "Scan event QR": start the camera straight away.
+  const [scanning, setScanning] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('scan') === '1');
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/join'); }, [loading, user, nav]);
   if (loading || !user) return <div className="center"><Spinner /></div>;
 

@@ -8,7 +8,7 @@ import { AccountMenu } from '../components/AccountMenu';
 import { DemoBanner, GlobalNav, Icon, LoadError, Logo, Spinner } from '../components/ui';
 import { useMode } from '../lib/mode';
 import { useAuth } from '../lib/auth';
-import { fmtRange } from '../lib/format';
+import { fmtRange, fmtTime } from '../lib/format';
 import type { MembershipDoc } from '../lib/types';
 import { Site } from './Site';
 
@@ -54,9 +54,11 @@ function MyEvents() {
   if (mode === 'organiser') return <div className="center"><Spinner /></div>;
   if (splash) return <WelcomeSplash name={first} onDone={() => setSplash(false)} />;
 
+  const live = sorted.upcoming.filter((m) => Date.parse(m.startsAt) <= now);
+  const next = sorted.upcoming.filter((m) => Date.parse(m.startsAt) > now);
   const card = (m: MembershipDoc, past = false) => (
     <Link key={m.id} href={`/e/${m.id}`} className={`event-card a-${m.color}${past ? ' is-past' : ''}`}>
-      <span className="tag">{past ? 'Ended' : Date.parse(m.startsAt) <= now ? 'Happening now' : 'Joined'}</span>
+      <span className="tag">{past ? 'Ended' : 'Joined'}</span>
       <h3>{m.title}</h3>
       <p>{m.venue}</p>
       <small>{fmtRange(m.startsAt, m.endsAt)}</small>
@@ -68,34 +70,54 @@ function MyEvents() {
       <DemoBanner />
       <header className="top">
         <Logo />
-        <div className="row">
-          {canOrganise && <button className="chip" onClick={() => setMode('organiser')}><Icon name="shield" size={16} /> Organiser mode</button>}
-          <AccountMenu />
-        </div>
+        <AccountMenu />
       </header>
-      <main className="dash-main">
+      <main className="dash-main home-main">
         <h1 className="hello">Hello, <span className="grad-text">{first}</span></h1>
-        <div className="dash-actions">
-          <Link href="/join" className="tile tile-blue action-tile">
-            <Icon name="scan" size={28} />
-            <span><b>Join an event</b><small>Enter the 6-digit number or scan the QR</small></span>
-          </Link>
-          <Link href="/explore" className="tile tile-lime action-tile">
-            <Icon name="compass" size={28} />
-            <span><b>Explore events</b><small>Swipe through what’s coming up</small></span>
-          </Link>
+
+        {live.length > 0 && (
+          <section className="home-live" aria-labelledby="home-live-h">
+            <h2 id="home-live-h"><span className="live-dot" aria-hidden="true" /> Happening now</h2>
+            {live.map((m) => (
+              <article key={m.id} className={`live-card a-${m.color}`}>
+                <div className="grow">
+                  <span className="tag">You’re attending</span>
+                  <h3>{m.title}</h3>
+                  <p>{m.venue} · until {fmtTime(m.endsAt ?? m.startsAt)}</p>
+                </div>
+                <div className="live-card-actions">
+                  <Link className="btn btn-white btn-sm" href={`/e/${m.id}`}>Open event</Link>
+                  <Link className="btn btn-glass btn-sm" href={`/e/${m.id}/pass`}><Icon name="ticket" size={15} /> My pass</Link>
+                  <Link className="btn btn-glass btn-sm" href={`/e/${m.id}/schedule`}><Icon name="calendar" size={15} /> Schedule</Link>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+
+        <div className="home-actions">
+          <Link href="/join?scan=1" className="home-action a-blue"><span className="home-action-ic"><Icon name="scan" size={24} /></span><b>Scan event QR</b><small>Join or check in by scanning</small></Link>
+          <Link href="/join" className="home-action a-violet"><span className="home-action-ic"><Icon name="ticket" size={24} /></span><b>Enter event code</b><small>The 6-digit number</small></Link>
+          <Link href="/explore" className="home-action a-lime"><span className="home-action-ic"><Icon name="compass" size={24} /></span><b>Explore events</b><small>Find what’s coming up</small></Link>
         </div>
 
         <h2>My events</h2>
         {mine.error ? <LoadError /> : mine.loading ? <Spinner /> : mine.data.length === 0 ? (
           <div className="empty">
             <strong>No events yet</strong>
-            <div>Join with the number or QR code from the organiser, or find one in Explore.</div>
+            <div>Scan the event’s QR code or enter its number, or find one in Explore.</div>
           </div>
         ) : <>
-          <div className="event-grid">{sorted.upcoming.map((m) => card(m))}</div>
+          {next.length > 0 ? <div className="event-grid">{next.map((m) => card(m))}</div> : !live.length && <p className="muted">Nothing coming up right now.</p>}
           {sorted.past.length > 0 && <><h3 className="past-head">Past events</h3><div className="event-grid">{sorted.past.map((m) => card(m, true))}</div></>}
         </>}
+
+        {canOrganise && (
+          <Link href="/organiser/login" className="home-org" onClick={(e) => { e.preventDefault(); setMode('organiser'); nav.push('/admin'); }}>
+            <span className="grow"><b>Organising an event?</b><small>Switch to organiser mode: same account, no new login</small></span>
+            <Icon name="arrow" size={18} />
+          </Link>
+        )}
       </main>
       <GlobalNav />
     </div>

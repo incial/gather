@@ -1,16 +1,17 @@
 'use client';
 
 import QRCode from 'qrcode';
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
 import {
-  ArrowRight, BadgeCheck, Bell, Bookmark, CalendarDays, Check, ChevronLeft, Clock, Coffee, Compass, Download, ExternalLink, Globe, Hammer,
+  ArrowRight, BadgeCheck, Bell, Bookmark, Radio, CalendarDays, Check, ChevronLeft, Clock, Coffee, Compass, Download, ExternalLink, Globe, Hammer,
   House, Lock, Mail, MapPin, MessageSquareText, Mic, Phone, Plus, ScanLine, ShieldCheck, Sparkles, Star, Ticket, UserRound, Users, Wifi, X,
 } from 'lucide-react';
 import { isDemo } from '../lib/backend';
-import { usePulseRole } from '../lib/roles';
+import { useAuth } from '../lib/auth';
+import { useCol } from '../lib/live';
 import { downloadCsv } from '../lib/csv';
 import type { Sheet } from '../lib/exports';
 import { hue, initials } from '../lib/format';
@@ -28,7 +29,7 @@ const ICONS = {
   back: ChevronLeft, wifi: Wifi, calendar: CalendarDays, ticket: Ticket, shield: ShieldCheck, bookmark: Bookmark,
   compass: Compass, close: X, check: Check, star: Star, download: Download, external: ExternalLink, arrow: ArrowRight,
   lock: Lock, mail: Mail, phone: Phone, globe: Globe, clock: Clock, pin: MapPin, mic: Mic, tool: Hammer,
-  sparkle: Sparkles, coffee: Coffee, verified: BadgeCheck, bell: Bell,
+  sparkle: Sparkles, coffee: Coffee, verified: BadgeCheck, bell: Bell, live: Radio,
 };
 export type IconName = keyof typeof ICONS;
 
@@ -42,24 +43,33 @@ export function LinkedinIcon({ size = 20 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.900 21H3.300V9.200h3.600zM5.100 7.600a2.100 2.100 0 1 1 0-4.200 2.100 2.100 0 0 1 0 4.200zM21 21h-3.600v-5.700c0-1.400 0-3.100-1.900-3.100s-2.200 1.500-2.200 3V21H9.700V9.200h3.400v1.600h.1a3.800 3.800 0 0 1 3.400-1.900c3.600 0 4.300 2.400 4.300 5.500z" /></svg>;
 }
 
+/**
+ * The attendee menu bar: Home, People, Live, Alerts and Profile (with your photo). Joining, scanning,
+ * Explore and Pulse live on Home; organiser tools are in organiser mode.
+ */
 export function GlobalNav() {
   const pathname = usePathname();
-  const role = usePulseRole();
-  // Pulse is in the menu for organisers and speakers, who run sessions. Attendees take part through Activity.
-  const items = [
-    { href: '/', label: 'My events', icon: 'home' },
-    { href: '/explore', label: 'Explore', icon: 'compass' },
-    { href: '/join', label: 'Join', icon: 'scan' },
-    { href: '/activity', label: 'Activity', icon: 'bell' },
-    { href: '/people', label: 'People', icon: 'people' },
-    ...(role.canManage ? [{ href: '/pulse', label: 'Pulse', icon: 'sparkle' }] as const : []),
-    { href: '/profile', label: 'Profile', icon: 'speakers' },
-  ] as const;
+  const { user } = useAuth();
+  const unread = useCol<{ id: string }>(user ? `users/${user.uid}/notifications` : null, useMemo<[string, unknown][]>(() => [['read', false]], []));
+  const n = unread.data.length;
+  const homeish = pathname === '/' || ['/explore', '/join', '/saved', '/pulse'].some((p) => pathname.startsWith(p));
+  const items: { href: string; label: string; icon?: IconName; on: boolean; badge?: number; avatar?: boolean }[] = [
+    { href: '/', label: 'Home', icon: 'home', on: homeish },
+    { href: '/people', label: 'People', icon: 'people', on: pathname.startsWith('/people') },
+    { href: '/activity', label: 'Live', icon: 'live', on: pathname.startsWith('/activity') },
+    { href: '/inbox', label: 'Alerts', icon: 'bell', on: pathname.startsWith('/inbox'), badge: n },
+    { href: '/profile', label: 'Profile', on: pathname.startsWith('/profile'), avatar: true },
+  ];
   return (
     <nav className="global-nav" aria-label="Main">
       {items.map((i) => (
-        <Link key={i.href} href={i.href} className={pathname === i.href ? 'on' : ''} aria-current={pathname === i.href ? 'page' : undefined} aria-label={i.label}>
-          <Icon name={i.icon} size={21} /><span>{i.label}</span>
+        <Link key={i.href} href={i.href} className={i.on ? 'on' : ''} aria-current={i.on ? 'page' : undefined}
+          aria-label={i.badge ? `${i.label}, ${i.badge} unread` : i.label}>
+          <span className="gn-ic">
+            {i.avatar && user ? <Avatar id={user.uid} name={user.name || user.email} photo={user.photo} size={24} /> : <Icon name={i.icon ?? 'home'} size={21} />}
+            {!!i.badge && <i className="gn-badge">{i.badge > 9 ? '9+' : i.badge}</i>}
+          </span>
+          <span className="gn-label">{i.label}</span>
         </Link>
       ))}
     </nav>

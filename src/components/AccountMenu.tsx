@@ -29,7 +29,8 @@ export function AccountMenu({ photo }: { photo?: string }) {
 
   return (
     <div className="acct" ref={box}>
-      <NotificationBell />
+      {/* Attendees have Alerts in the menu bar; organisers keep the bell here. */}
+      {mode === 'organiser' && <NotificationBell />}
       <button className="acct-btn" aria-haspopup="menu" aria-expanded={open} aria-label="Account menu" onClick={() => setOpen(!open)}>
         <Avatar id={user.uid} name={user.name || user.email} photo={photo ?? user.photo} size={40} />
       </button>
