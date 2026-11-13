@@ -9,10 +9,11 @@ import type { EventDoc, EventInfoDoc, SessionDoc, SpeakerDoc } from '../../lib/t
 import { AdminCtx } from './context';
 import { AccountMenu } from '../../components/AccountMenu';
 import { useAuth } from '../../lib/auth';
+import { isEventOwner, isOnTeam } from '../../lib/team';
 
 const TABS = [
   ['', 'Overview'], ['details', 'Details'], ['agenda', 'Schedule'], ['speakers', 'Speakers'],
-  ['people', 'People'], ['attendance', 'Attendance'], ['updates', 'Updates'], ['activities', 'Activities'], ['feedback', 'Feedback'], ['assets', 'Assets'], ['certificates', 'Certificates'], ['data', 'Data & CSV'],
+  ['people', 'People'], ['team', 'Team'], ['attendance', 'Attendance'], ['updates', 'Updates'], ['activities', 'Activities'], ['feedback', 'Feedback'], ['assets', 'Assets'], ['certificates', 'Certificates'], ['data', 'Data & CSV'],
 ];
 
 export function AdminEventLayout({ children }: { children: ReactNode }) {
@@ -21,18 +22,19 @@ export function AdminEventLayout({ children }: { children: ReactNode }) {
   const base = `events/${id}`;
   const { user, isSuper } = useAuth();
   const event = useDoc<EventDoc>(base);
-  // Only the event's owner (who created it) or the Master Admin manages it. The rules enforce this too.
-  const owns = !!event.data && (isSuper || (!!user && event.data.ownerUid === user.uid));
+  // The event's owner (who created it), anyone on its team, or the Master Admin manages it. The rules enforce this too.
+  const isOwner = !!event.data && (isSuper || isEventOwner(event.data, user));
+  const owns = !!event.data && (isOwner || isOnTeam(event.data, user));
   const info = useDoc<EventInfoDoc>(owns ? `${base}/private/info` : null);
   const sessions = useCol<SessionDoc>(owns ? `${base}/sessions` : null);
   const speakers = useCol<SpeakerDoc>(owns ? `${base}/speakers` : null);
 
   if (event.loading) return <div className="center"><Spinner /></div>;
   if (!event.data) return <div className="center"><Empty title="Event not found"><Link href="/admin">Back to events</Link></Empty></div>;
-  if (!owns) return <div className="center"><Empty title="You don’t manage this event">Only the organiser who created it can manage it. <Link href="/admin">Back to your events</Link></Empty></div>;
+  if (!owns) return <div className="center"><Empty title="You don’t manage this event">Only its organiser and the team they added can manage it. If you’re on the team, sign in with the email they added. <Link href="/admin">Back to your events</Link></Empty></div>;
 
   return (
-    <AdminCtx.Provider value={{ event: event.data, info: info.data, sessions: sessions.data, speakers: speakers.data }}>
+    <AdminCtx.Provider value={{ event: event.data, info: info.data, sessions: sessions.data, speakers: speakers.data, isOwner }}>
       <div className={`admin a-${event.data.color}`}>
         <DemoBanner />
         <header className="admin-top">

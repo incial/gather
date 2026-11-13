@@ -1,5 +1,6 @@
 'use client';
 
+import { useManagedEvents } from '../lib/team';
 import { useMyEvents } from '../lib/myEvents';
 import { Bell, ClipboardList, Megaphone, Radio, Trash2 } from 'lucide-react';
 import Link from 'next/link';
@@ -15,7 +16,7 @@ import { useCol } from '../lib/live';
 import type { NotificationDoc } from '../lib/meetping';
 import { useMode } from '../lib/mode';
 import type { PulseDoc } from '../lib/pulse/types';
-import type { EventDoc, MembershipDoc, SessionDoc, SpeakingDoc } from '../lib/types';
+import type { MembershipDoc, SessionDoc, SpeakingDoc } from '../lib/types';
 
 interface Announcement { id: string; text: string; by: string; byName: string; at: string }
 
@@ -43,15 +44,10 @@ export function Activity() {
   const notes = useCol<NotificationDoc>(user ? `users/${user.uid}/notifications` : null);
   const [now] = useState(() => Date.now());
   const [chosen, setChosen] = useState('');
-  // Organisers also see the events they run, even ones they haven't joined as an attendee (read once).
-  const [run, setRun] = useState<MembershipDoc[]>([]);
-  useEffect(() => {
-    if (!canOrganise || !user) return;
-    // Events this person runs (all events for the Master Admin).
-    backend.getCol<EventDoc>('events', isSuper ? [] : [['ownerUid', user.uid]], isSuper ? { orderBy: 'startsAt', desc: true, limit: 20 } : { limit: 50 })
-      .then((list) => setRun(list.map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt, endsAt: e.endsAt, venue: e.venue, color: e.color }))))
-      .catch(() => {});
-  }, [canOrganise, user, isSuper]);
+  // Organisers also see the events they run (created, or on the team), even ones they haven't joined as an attendee.
+  const managed = useManagedEvents(canOrganise ? user : null, isSuper);
+  const run = useMemo<MembershipDoc[]>(() => managed.data.map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt, endsAt: e.endsAt, venue: e.venue, color: e.color })), [managed.data]);
+  const runIds = useMemo(() => new Set(run.map((r) => r.id)), [run]);
   const events = useMemo(() => {
     const all = [...mine.data, ...run.filter((r) => !mine.data.some((m) => m.id === r.id))];
     return all.filter((m) => Date.parse(m.endsAt ?? m.startsAt) > now - 30 * 86_400_000).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
@@ -85,7 +81,8 @@ export function Activity() {
               ))}
             </div>
           )}
-          {ev && <EventFeed key={ev.id} ev={ev} organiser={canOrganise} speaker={amSpeaker} />}
+          {/* Organiser tools only for events this person actually runs (the rules would refuse them anyway). */}
+          {ev && <EventFeed key={ev.id} ev={ev} organiser={isSuper || runIds.has(ev.id)} speaker={amSpeaker} />}
         </>}
 
         <JoinWithCode />

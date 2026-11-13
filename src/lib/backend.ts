@@ -3,6 +3,7 @@ import { createFirebaseBackend, firebaseConfig } from './firebaseBackend';
 import { createDemoBackend } from './demoBackend';
 
 export type Unsub = () => void;
+/** Equality filters. A field written as 'name[]' matches documents whose list `name` contains the value. */
 export type Where = [field: string, value: unknown][];
 /** Optional query shaping. orderBy + after give cursor paging; limit caps the documents read. */
 /** `after` is [value of orderBy field, document id] of the last row, so equal values never skip rows. */

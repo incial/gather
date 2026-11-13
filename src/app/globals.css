@@ -1965,3 +1965,14 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
   .ev-head { padding: 12px; gap: 12px; }
   .ev-head-art { width: 56px; height: 56px; }
 }
+.warn-note { display: grid; gap: 6px; justify-items: start; padding: 14px 16px; border-radius: 18px; background: #FFF4D6; border: 1px solid #FFD66B; color: #5A4300; }
+.warn-note p { margin: 0; font-size: 14px; }
+/* Organiser team */
+.team-list h2 { display: flex; align-items: center; gap: 8px; }
+.team-list ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.team-list li { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid rgba(11, 11, 15, .06); }
+.team-list li:last-child { border-bottom: 0; }
+.team-list .grow { display: grid; min-width: 0; }
+.team-list b { overflow-wrap: anywhere; font-weight: 600; }
+.team-list small { color: var(--ink-2); font-size: 13px; }
+.team-av { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 12px; background: var(--paper); font-weight: 650; }

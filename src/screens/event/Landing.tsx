@@ -95,8 +95,8 @@ export function JoinForm({ event, onDone }: { event: EventDoc; onDone?: () => vo
   if (!prereg && event.registration === 'invite') {
     return (
       <div className="notice">
-        <strong>{user!.email} isn’t on the list</strong>
-        <p>This event is invite-only. Sign in with the email you registered with, or ask the organiser to add you.</p>
+        <strong>{user!.email} isn’t on the guest list</strong>
+        <p>The organiser has limited this event to people they registered. If you registered with another email, sign out and sign in with that one. Otherwise, ask {event.organiser || 'the organiser'} to add this email.</p>
       </div>
     );
   }

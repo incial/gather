@@ -30,7 +30,7 @@ function randomJoinCode() {
 }
 
 export const getPrereg = (eventId: string, email: string) =>
-  backend.getDoc<PreregDoc>(`events/${eventId}/preregistered/${email}`);
+  backend.getDoc<PreregDoc>(`events/${eventId}/preregistered/${email.trim().toLowerCase()}`);
 
 const profilePath = (uid: string) => `users/${uid}/profile/me`;
 export type SavedProfile = Profile & { id: string; listed: boolean };

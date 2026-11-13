@@ -198,3 +198,18 @@ Changes:
 - **Ownership:** events gain `ownerUid` / `ownerEmail`. Every event-level permission (`ownsEvent(e)`) = owner or Master Admin: the event, attendees, check-ins, speakers, codes, certificates, announcements, Pulse, deletion. Ownership can only be changed by the Master Admin.
 - Existing events without `ownerUid` can only be managed by the Master Admin.
 - Dual role: same account; attendee data unchanged; mode toggle only changes the dashboard.
+
+## Organiser teams (co-organisers) — 14 Nov 2026
+
+**New optional field** on `events/{id}`: `teamEmails: string[]` (lower-case Google emails, max 15). No existing data changes; events without it behave exactly as before.
+
+**Rules change** (`firestore.rules`):
+- `onTeam(d)`: signed in, verified email, and that email (lower-cased) is in `d.teamEmails`.
+- `ownsEvent(e)` now also allows `onTeam` — team members manage everything under the event (sessions, speakers, attendees, check-in, attendance, announcements, assets, pulse, exports).
+- `events/{id}` get/list: also team members (so they see drafts and find the event with `teamEmails array-contains me`).
+- `events/{id}` update: owner and Master Admin as before; team members too, but they can't change `ownerUid`, `ownerEmail` or `teamEmails`. `teamEmails` must be a list of at most 15.
+- `events/{id}` delete: unchanged — owner or Master Admin only.
+
+Note: like `ownerEmail`, `teamEmails` is readable by anyone who can read a public event.
+
+Tests: `rules-tests/team.rules.test.ts` (8 tests); full suite 190/190 passing.

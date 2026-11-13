@@ -6,7 +6,7 @@ import { useCol } from '../../lib/live';
 import type { AttendanceDoc, AttendeeDoc, ConnectionDoc, EventDoc, EventInfoDoc, FeedbackDoc, PreregDoc, SavedDoc, SessionDoc, SessionFeedbackDoc, SpeakerDoc } from '../../lib/types';
 
 /** The small, always-needed part of an event. Larger collections load per tab with useAdminCol. */
-export interface AdminBase { event: EventDoc; info: EventInfoDoc | null; sessions: SessionDoc[]; speakers: SpeakerDoc[] }
+export interface AdminBase { event: EventDoc; info: EventInfoDoc | null; sessions: SessionDoc[]; speakers: SpeakerDoc[]; /** The owner (or Master Admin): manages the team and can delete. Team members can't. */ isOwner: boolean }
 export const AdminCtx = createContext<AdminBase | null>(null);
 
 export function useAdmin() {

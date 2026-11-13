@@ -222,11 +222,12 @@ export function EventForm({ initial, eventId, bannerThumb, submitLabel, onSubmit
             <span className="field-hint">The most people who can register. Leave empty for no limit.</span>
           </div>
         </div>
-        <Field label="Registration">
+        <Field label="Who can join">
           <select value={f.registration} onChange={(e) => setF({ ...f, registration: e.target.value as EventFields['registration'] })}>
-            <option value="open">Open: anyone who can see it can register</option>
-            <option value="invite">Invite list only: people I import</option>
+            <option value="open">Anyone who can see the event</option>
+            <option value="invite">Only people on my imported list</option>
           </select>
+          {f.registration === 'invite' && <span className="field-hint">Even when the event is public, only emails on your list (People → Import) can join.</span>}
         </Field>
       </fieldset>
 

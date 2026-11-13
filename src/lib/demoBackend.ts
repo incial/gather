@@ -65,7 +65,11 @@ export function createDemoBackend(): Backend {
     return Object.entries(store)
       .filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
       .map(([p, d]) => ({ id: p.slice(prefix.length), ...d }))
-      .filter((d) => w.every(([f, v]) => (d as Record<string, unknown>)[f] === v));
+      .filter((d) => w.every(([f, v]) => {
+        const r = d as Record<string, unknown>;
+        if (f.endsWith('[]')) { const list = r[f.slice(0, -2)]; return Array.isArray(list) && list.includes(v); }
+        return r[f] === v;
+      }));
   };
 
   const shape = shapeRows;

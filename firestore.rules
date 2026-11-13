@@ -16,12 +16,21 @@ service cloud.firestore {
     }
     // Open organiser registration: any signed-in Google account with a verified email can create events.
     function canOrganise() { return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous' && request.auth.token.email_verified == true; }
-    // Event-level control: only the event's owner (who created it) or the Master Admin.
+    // A co-organiser: their verified Google email is on the event's team list.
+    function onTeam(d) {
+      return signedIn() && request.auth.token.get('email_verified', false) == true
+        && request.auth.token.get('email', '') != ''
+        && request.auth.token.email.lower() in d.get('teamEmails', []);
+    }
+    // Event-level control: the event's owner (who created it), its team, or the Master Admin.
     function ownsEvent(e) {
       return isSuper() || (signedIn()
         && exists(/databases/$(database)/documents/events/$(e))
-        && get(/databases/$(database)/documents/events/$(e)).data.get('ownerUid', '') == request.auth.uid);
+        && (get(/databases/$(database)/documents/events/$(e)).data.get('ownerUid', '') == request.auth.uid
+          || onTeam(get(/databases/$(database)/documents/events/$(e)).data)));
     }
+    // The team list: lower-case emails, at most 15.
+    function validTeam(d) { return d.get('teamEmails', []) is list && d.get('teamEmails', []).size() <= 15; }
     // A Google account, not a guest (anonymous) session.
     function notGuest() { return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
     function eventDoc(e) { return get(/databases/$(database)/documents/events/$(e)).data; }
@@ -228,13 +237,17 @@ service cloud.firestore {
       // Private events (linkAccess) open with their link but are never listed.
       // A deleted event reads as missing (not as an error), so apps can tidy up.
       allow get: if resource == null || resource.data.published == true || resource.data.get('linkAccess', false) == true
-        || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid) || isSuper();
-      allow list: if resource.data.published == true || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid) || isSuper();
+        || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid) || onTeam(resource.data) || isSuper();
+      allow list: if resource.data.published == true || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid) || onTeam(resource.data) || isSuper();
       // Anyone can organise: the creator becomes the owner.
-      allow create: if canOrganise() && request.resource.data.ownerUid == request.auth.uid;
+      allow create: if canOrganise() && request.resource.data.ownerUid == request.auth.uid && validTeam(request.resource.data);
       // Only the owner (or the Master Admin) edits or deletes it. Ownership never changes, except by the Master Admin.
-      allow update: if isSuper() || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid
-        && request.resource.data.get('ownerUid', '') == request.auth.uid);
+      // The team edits everything except who owns it and who's on the team; only the owner manages the team.
+      allow update: if validTeam(request.resource.data) && (isSuper()
+        || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid
+          && request.resource.data.get('ownerUid', '') == request.auth.uid)
+        || (onTeam(resource.data)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerUid', 'ownerEmail', 'teamEmails'])));
       allow delete: if isSuper() || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid);
 
       match /sessions/{s} {

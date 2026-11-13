@@ -38,7 +38,8 @@ export function createFirebaseBackend(): Backend {
     connectFirestoreEmulator(db, '127.0.0.1', 8181);
   }
   const buildQuery = (path: string, w: Where, opts?: QueryOpts): Query => {
-    const parts = [...w.map(([f, v]) => where(f, '==', v))];
+    // A field written as 'name[]' means "this list contains the value" (array-contains); anything else is equality.
+    const parts = [...w.map(([f, v]) => (f.endsWith('[]') ? where(f.slice(0, -2), 'array-contains', v) : where(f, '==', v)))];
     const shaped = [
       ...(opts?.orderBy ? [orderBy(opts.orderBy, opts.desc ? 'desc' : 'asc'), orderBy(documentId(), opts.desc ? 'desc' : 'asc')] : []),
       ...(opts?.orderBy && opts.after ? [startAfter(...opts.after)] : []),

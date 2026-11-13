@@ -101,7 +101,14 @@ export function Overview() {
                 <option value="draft">Draft: hidden from attendees</option>
               </select>
             </div>
-            <label className="check"><input type="checkbox" checked={event.registration === 'open'} onChange={(e) => toggle({ registration: e.target.checked ? 'open' : 'invite' }, e.target.checked ? 'Open registration on' : 'Invite list only')} /><span><b>Open registration</b><small>Off means only people on your imported list can join.</small></span></label>
+            <label className="check"><input type="checkbox" checked={event.registration === 'open'} onChange={(e) => toggle({ registration: e.target.checked ? 'open' : 'invite' }, e.target.checked ? 'Anyone can join now' : 'Only people on your list can join')} /><span><b>Anyone can join</b><small>Off means only people on your imported list can join, even when the event is public.</small></span></label>
+            {vis !== 'draft' && event.registration === 'invite' && (
+              <div className="warn-note" role="alert">
+                <b>Only people on your list can join</b>
+                <p>This event is {vis === 'public' ? 'public' : 'shared by link'}, but registration is invite-only, so anyone not on your imported list sees “You’re not on the list”.</p>
+                <button className="btn btn-ink btn-sm" onClick={() => toggle({ registration: 'open' }, 'Anyone can join now')}>Let anyone join</button>
+              </div>
+            )}
             <label className="check"><input type="checkbox" checked={event.feedbackOpen} onChange={(e) => toggle({ feedbackOpen: e.target.checked }, e.target.checked ? 'Feedback is open' : 'Feedback closed')} /><span><b>Feedback open</b><small>Attendees can send overall feedback now.</small></span></label>
           </div>
           {!sessions.length && <p className="muted">Next: <Link href={`/admin/e/${event.id}/agenda`}>add the schedule</Link> so check-in can start.</p>}

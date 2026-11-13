@@ -14,7 +14,7 @@ import { useAdmin } from './context';
 import { EventForm } from './EventForm';
 
 export function Details() {
-  const { event, info } = useAdmin();
+  const { event, info, isOwner } = useAdmin();
   const toast = useToast();
   const nav = useRouter();
   const [deleting, setDeleting] = useState(false);
@@ -26,12 +26,12 @@ export function Details() {
         if ((d.capacity ?? 0) !== (event.capacity ?? 0)) await syncCapacityCounter(event.id);
       }} onDone={() => toast('Saved')} />
       <EventInfoForm key={info ? 'loaded' : 'empty'} eventId={event.id} info={info} />
-      <section className="panel">
+      {isOwner && <section className="panel">
         <h2>Delete event</h2>
         <p className="muted">Permanently removes the event and all its data.</p>
         <button className="btn btn-ghost btn-sm danger" onClick={() => setDeleting(true)}>Delete event</button>
         {deleting && <DeleteEventDialog event={event} onClose={() => setDeleting(false)} onDeleted={() => nav.replace('/admin')} />}
-      </section>
+      </section>}
     </div>
   );
 }
