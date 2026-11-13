@@ -1,10 +1,10 @@
 'use client';
 
-import { TypeChip, TypeDetails } from '../../components/EventTypeInfo';
+import { TypeDetails } from '../../components/EventTypeInfo';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Avatar, Icon } from '../../components/ui';
-import { fmtDay, fmtRange, fmtTime } from '../../lib/format';
+import { fmtRange, fmtTime } from '../../lib/format';
 import { canRate } from '../../lib/session';
 import { useCount } from '../../lib/live';
 import { useEventCtx } from './context';
@@ -13,9 +13,12 @@ import { WifiCard } from './WifiCard';
 import { CertificateCard } from './CertificateCard';
 import { icsFor } from '../../lib/calendar';
 import { downloadBlob } from '../../lib/csv';
-import { EventBanner, EventVideo, ScheduleFiles } from '../../components/EventMedia';
+import { EventVideo, ScheduleFiles } from '../../components/EventMedia';
 import { ActivitiesCard } from './Activities';
 import { SaveEventButton } from '../../components/SaveEventButton';
+import { useEventPings } from '../../components/MeetPing';
+import { EventLiveFeed } from './EventLive';
+import { useAuth } from '../../lib/auth';
 
 function useNow(ms = 1000) {
   const [now, setNow] = useState(Date.now());
@@ -23,18 +26,12 @@ function useNow(ms = 1000) {
   return now;
 }
 
-function Countdown({ to }: { to: string }) {
-  const now = useNow();
+/** "Starts in 2d 4h" — a one-line countdown for the compact header. */
+function StartsIn({ to }: { to: string }) {
+  const now = useNow(30000);
   const left = Math.max(0, Date.parse(to) - now);
-  const parts: [string, number][] = [
-    ['days', Math.floor(left / 864e5)], ['hrs', Math.floor(left / 36e5) % 24],
-    ['min', Math.floor(left / 6e4) % 60], ['sec', Math.floor(left / 1000) % 60],
-  ];
-  return (
-    <div className="countdown" role="timer" aria-label="Time until the event starts">
-      {parts.map(([l, n]) => <div key={l}><b>{String(n).padStart(2, '0')}</b><span>{l}</span></div>)}
-    </div>
-  );
+  const d = Math.floor(left / 864e5), h = Math.floor(left / 36e5) % 24, m = Math.floor(left / 6e4) % 60;
+  return <span className="ev-head-count">Starts in {d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m} min`}</span>;
 }
 
 export function EventHome() {
@@ -46,29 +43,65 @@ export function EventHome() {
   const ended = Date.parse(event.endsAt) < now;
   const live = sessions.find((s) => Date.parse(s.startsAt) <= now && Date.parse(s.endsAt) >= now);
   const next = sessions.find((s) => Date.parse(s.startsAt) > now);
-  const spotlight = live ?? next;
   const rated = new Set(sessionFeedback.map((f) => f.sessionId));
   const toRate = sessions.filter((s) => canRate(s) && !rated.has(s.id)).length;
   const stamps = attendance.length + connections.length + (feedback ? 1 : 0);
   const total = sessions.length + speakers.length + 1;
   const first = me.name.split(' ').find((w) => !/^(dr|prof|mr|ms|mrs)\.?$/i.test(w)) ?? me.name;
+  const { user } = useAuth();
+  // People I'm connected with here: accepted Meet Pings, both directions.
+  const pings = useEventPings(event.id, me.uid);
+  const met = pings.filter((p) => p.status === 'accepted').map((p) => (p.fromUid === me.uid
+    ? { uid: p.toUid, name: p.toName, photo: p.toPhoto } : { uid: p.fromUid, name: p.fromName, photo: p.fromPhoto }));
+  const metCount = met.length + connections.length;
 
   return (
     <div className="stack-lg home-page">
-      <EventBanner event={event} className="span-2" />
-      <section className="hello-card span-2">
-        <span className="kicker">{ended ? 'That’s a wrap' : started ? 'We’re live' : 'See you soon'}, {first}</span>
-        <TypeChip event={event} />
-        <h1>{event.title}</h1>
-        <p>{event.tagline}</p>
-        {!started && <Countdown to={event.startsAt} />}
-        <div className="hello-meta"><span>{fmtRange(event.startsAt, event.endsAt)}</span><span>{event.venue}</span></div>
+      {/* Compact header: the event at a glance, so the useful things fit above the fold */}
+      <section className="ev-head span-2">
+        {event.bannerThumb
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img className="ev-head-art" src={event.bannerThumb} alt="" />
+          : <span className="ev-head-art ev-head-blank" aria-hidden="true">{event.title.slice(0, 1)}</span>}
+        <div className="ev-head-text">
+          <span className="ev-head-kicker">{ended ? 'That’s a wrap' : started ? <><i className="live-dot" aria-hidden="true" /> We’re live</> : 'See you soon'}, {first}</span>
+          <h1>{event.title}</h1>
+          <p>{fmtRange(event.startsAt, event.endsAt)}{event.venue && ` · ${event.venue}`}</p>
+        </div>
+        {!started && <StartsIn to={event.startsAt} />}
       </section>
 
-      <nav className="quick span-2" aria-label="Shortcuts">
-        <Link href={`/e/${event.id}/schedule`} className="chip"><Icon name="calendar" size={18} /> Schedule</Link>
-        <Link href={`/e/${event.id}/pass`} className="chip"><Icon name="ticket" size={18} /> My pass</Link>
-        <Link href={`/e/${event.id}/people`} className="chip"><Icon name="people" size={18} /> {people.n === null ? 'People' : `${people.n} ${people.n === 1 ? 'person' : 'people'}`}</Link>
+      {/* The four things people open most, at the top */}
+      <nav className="ev-tiles span-2" aria-label="Your event">
+        <Link href={`/e/${event.id}/schedule`} className="ev-tile t-blue">
+          <span className="ev-tile-ic"><Icon name="calendar" size={20} /></span>
+          <b>Schedule</b>
+          <small>{live ? `Now: ${live.title}` : next ? `Next: ${next.title} · ${fmtTime(next.startsAt)}` : `${sessions.length} session${sessions.length === 1 ? '' : 's'}`}</small>
+        </Link>
+        <Link href={`/e/${event.id}/pass`} className="ev-tile t-lime">
+          <span className="ev-tile-me"><Avatar id={me.uid} name={me.name} photo={me.photo || user?.photo || undefined} size={40} /></span>
+          <b>My pass</b>
+          <small>{me.checkedIn ? 'Checked in' : 'Show it at the door'}</small>
+        </Link>
+        <Link href={`/e/${event.id}/people`} className="ev-tile t-violet">
+          <span className="ev-tile-faces">
+            {met.slice(0, 3).map((p) => <Avatar key={p.uid} id={p.uid} name={p.name} photo={p.photo || undefined} size={30} />)}
+            {!met.length && <span className="ev-tile-ic"><Icon name="people" size={20} /></span>}
+          </span>
+          <b>People</b>
+          <small>{metCount ? `${metCount} connected` : people.n ? `${people.n} here · say hi` : 'Find people to meet'}</small>
+        </Link>
+        <Link href={`/e/${event.id}/speakers`} className="ev-tile t-amber">
+          <span className="ev-tile-ic"><Icon name="mic" size={20} /></span>
+          <b>Speakers</b>
+          <small>{speakers.length ? `${speakers.length} · send a Meet Ping` : 'Coming soon'}</small>
+        </Link>
+      </nav>
+
+      <div className="span-2"><EventLiveFeed limit={4} /></div>
+
+      <nav className="quick span-2" aria-label="More">
+        <Link href={`/e/${event.id}/feedback`} className="chip"><Icon name="feedback" size={18} /> Feedback</Link>
         <Link href={`/e/${event.id}/assets`} className="chip"><Icon name="download" size={18} /> Assets</Link>
         <SaveEventButton event={event} compact />
         {role
@@ -83,14 +116,6 @@ export function EventHome() {
       <div className="span-2"><ScheduleFiles eventId={event.id} compact /></div>
       {info?.wifiName && <WifiCard info={info} />}
       <HelpCard info={info} />
-
-      {spotlight && (
-        <Link href={`/e/${event.id}/schedule`} className="spot card">
-          <span className={live ? 'pill pill-live' : 'pill'}>{live ? 'Happening now' : 'Up next'}</span>
-          <h2>{spotlight.title}</h2>
-          <p>{fmtDay(spotlight.startsAt)} · {fmtTime(spotlight.startsAt)}{spotlight.room && ` · ${spotlight.room}`}</p>
-        </Link>
-      )}
 
       <Link href={`/e/${event.id}/pass`} className="progress-card">
         <div><b>{stamps}<small> / {total}</small></b><span>stamps collected</span></div>

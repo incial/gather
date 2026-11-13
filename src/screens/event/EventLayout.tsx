@@ -16,14 +16,14 @@ import { NotificationBell } from '../../components/NotificationBell';
 
 const TABS = [
   { to: '', label: 'Home', icon: 'home', end: true },
-  { to: 'speakers', label: 'Speakers', icon: 'speakers' },
+  { to: 'live', label: 'Live', icon: 'live' },
   { to: 'scan', label: 'Scan', icon: 'scan', scan: true },
   { to: 'people', label: 'People', icon: 'people' },
-  { to: 'feedback', label: 'Feedback', icon: 'feedback' },
+  { to: 'speakers', label: 'Speakers', icon: 'mic' },
 ] as const;
 
 const SIDE = [
-  { to: '', label: 'Home', icon: 'home' }, { to: 'schedule', label: 'Schedule', icon: 'calendar' },
+  { to: '', label: 'Home', icon: 'home' }, { to: 'live', label: 'Live', icon: 'live' }, { to: 'schedule', label: 'Schedule', icon: 'calendar' },
   { to: 'speakers', label: 'Speakers', icon: 'speakers' }, { to: 'people', label: 'People', icon: 'people' },
   { to: 'feedback', label: 'Feedback', icon: 'feedback' }, { to: 'activities', label: 'Activities', icon: 'sparkle' },
   { to: 'assets', label: 'Assets', icon: 'download' },
@@ -50,6 +50,11 @@ export function EventLayout({ children }: { children: ReactNode }) {
   const info = useDoc<EventInfoDoc>(joined ? `${base}/private/info` : null);
   const sessionFeedback = useCol<SessionFeedbackDoc>(joined ? `${base}/sessionFeedback` : null, mine);
   const role = useDoc<RoleDoc>(joined ? `${base}/roles/${user!.uid}` : null);
+  // A dot on the Live tab: a poll is running, or the organisers posted a notice in the last two hours.
+  // (Same queries as the live feed, so these share its listeners: no extra reads.)
+  const livePolls = useCol<{ id: string }>(joined ? 'pulse' : null, useMemo<[string, unknown][]>(() => [['eventId', id], ['status', 'live']], [id]));
+  const notices = useCol<{ id: string; at: string }>(joined ? `${base}/announcements` : null);
+  const liveDot = livePolls.data.length > 0 || notices.data.some((n) => Date.now() - Date.parse(n.at) < 2 * 3600_000);
   const orderedSpeakers = useMemo(() => sortSpeakers(speakers.data), [speakers.data]);
 
   const sorted = useMemo(() => [...sessions.data].sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [sessions.data]);
@@ -117,7 +122,7 @@ export function EventLayout({ children }: { children: ReactNode }) {
             const active = 'end' in t ? pathname === href : pathname.startsWith(href);
             return (
               <Link key={t.to} href={href} aria-current={active ? 'page' : undefined} className={`tab${'scan' in t ? ' tab-scan' : ''}${active ? ' active' : ''}`}>
-                <span className={'scan' in t ? 'scan-btn' : 'tab-icon'}><Icon name={t.icon} size={'scan' in t ? 26 : 22} /></span>
+                <span className={'scan' in t ? 'scan-btn' : 'tab-icon'}><Icon name={t.icon} size={'scan' in t ? 26 : 22} />{t.to === 'live' && liveDot && !active && <i className="tab-dot" aria-label="New" />}</span>
                 <span>{t.label}</span>
               </Link>
             );

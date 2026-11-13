@@ -12,13 +12,13 @@ import { useToast } from './ui';
 
 interface Notice { id: string; text: string; byName: string; at: string }
 interface FileItem { id: string; title: string; kind: string; createdAt?: string }
-type Item = { key: string; kind: 'poll' | 'survey' | 'notice' | 'file' | 'feedback' | 'alert'; title: string; sub: string; href: string; at: string; eventTitle: string };
+export type Item = { key: string; kind: 'poll' | 'survey' | 'notice' | 'file' | 'feedback' | 'alert'; title: string; sub: string; href: string; at: string; eventTitle: string };
 
 const RECENT_MS = 48 * 3600_000;
 const canNotify = () => typeof window !== 'undefined' && 'Notification' in window;
 
 /** Shows a device notification (while Gather is open, even in a background tab) and an in-app pop-up. */
-function useAnnounce() {
+export function useAnnounce() {
   const toast = useToast();
   return (it: Item) => {
     toast(`${it.eventTitle}: ${it.title}`);
@@ -28,20 +28,21 @@ function useAnnounce() {
   };
 }
 
-/** One event's live items: running polls and surveys, organiser notices and new files. */
-function EventSource({ ev, uid, onItems }: { ev: MembershipDoc; uid: string; onItems: (id: string, items: Item[]) => void }) {
+/**
+ * One event's live items: running polls and surveys, organiser notices, new files and the feedback prompt.
+ * `sinceMs` is how far back notices and files count as news (Home: 48 hours; the event's own feed: the whole event).
+ */
+export function useEventFeed(ev: { id: string; title: string }, uid: string, sinceMs = RECENT_MS) {
   const evDoc = useDoc<EventDoc>(`events/${ev.id}`);
   const mine = useDoc<FeedbackDoc>(`events/${ev.id}/feedback/${uid}`);
   const live = useCol<PulseDoc>('pulse', useMemo<[string, unknown][]>(() => [['eventId', ev.id], ['status', 'live']], [ev.id]));
   const open = useCol<PulseDoc>('pulse', useMemo<[string, unknown][]>(() => [['eventId', ev.id], ['status', 'published']], [ev.id]));
   const notices = useCol<Notice>(`events/${ev.id}/announcements`);
   const files = useCol<FileItem>(`events/${ev.id}/assets`);
-  const announce = useAnnounce();
-  const seen = useRef<Set<string> | null>(null);
   const ready = !live.loading && !open.loading && !notices.loading && !files.loading && !evDoc.loading && !mine.loading;
 
   const items = useMemo(() => {
-    const since = Date.now() - RECENT_MS;
+    const since = Date.now() - sinceMs;
     const out: Item[] = [
       ...[...live.data, ...open.data].map((p): Item => ({
         key: `p-${p.id}`, kind: p.kind === 'survey' ? 'survey' : 'poll', title: p.title,
@@ -62,7 +63,15 @@ function EventSource({ ev, uid, onItems }: { ev: MembershipDoc; uid: string; onI
       }] : []),
     ];
     return out;
-  }, [live.data, open.data, notices.data, files.data, evDoc.data, mine.data, ev.id, ev.title]);
+  }, [live.data, open.data, notices.data, files.data, evDoc.data, mine.data, ev.id, ev.title, sinceMs]);
+  return { items, ready };
+}
+
+/** Feeds one event into Home's Live updates and pops up anything new. */
+function EventSource({ ev, uid, onItems }: { ev: MembershipDoc; uid: string; onItems: (id: string, items: Item[]) => void }) {
+  const { items, ready } = useEventFeed(ev, uid);
+  const announce = useAnnounce();
+  const seen = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     if (!ready) return;
