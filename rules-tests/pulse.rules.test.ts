@@ -43,7 +43,7 @@ beforeEach(async () => {
   await seed(async (db) => {
     await setDoc(doc(db, 'organisers/boss@org.test'), {});
     await setDoc(doc(db, 'superAdmins/god@x.test'), {});
-    await setDoc(doc(db, 'events/e1'), { published: true, registration: 'open', title: 'E' });
+    await setDoc(doc(db, 'events/e1'), { ownerUid: 'org', published: true, registration: 'open', title: 'E' });
     await setDoc(doc(db, 'events/e1/attendees/asha'), { uid: 'asha', email: 'asha@x.test' });
     await setDoc(doc(db, P), pulse());
     await setDoc(doc(db, `${P}/live/state`), state());
@@ -62,9 +62,10 @@ describe('creating and managing', () => {
     b.set(doc(db, 'pulse/new/private/key'), { answers: {}, openedAt: {}, vaultId: '' });
     await assertSucceeds(b.commit());
   });
-  it('plain attendees can’t create Pulse sessions (they take part in them)', async () => {
-    await assertFails(setDoc(doc(owner(), 'pulse/new'), pulse({ status: 'draft', code: 'NEW234' })));
-    await assertFails(setDoc(doc(ben(), 'pulse/x'), pulse({ status: 'draft', ownerUid: 'ben', eventId: '' })));
+  it('anyone can organise their own Pulse session, but not one for an event they don’t run', async () => {
+    await assertSucceeds(setDoc(doc(ben(), 'pulse/x'), pulse({ status: 'draft', ownerUid: 'ben', eventId: '' })));
+    await assertFails(setDoc(doc(ben(), 'pulse/y'), pulse({ status: 'draft', ownerUid: 'ben', eventId: 'e1' })));
+    await assertFails(setDoc(doc(ben(), 'pulse/z'), pulse({ status: 'draft', ownerUid: 'owner', eventId: '' })));
   });
   it('guests and signed-out visitors cannot create', async () => {
     await assertFails(setDoc(doc(guest(), 'pulse/x'), pulse({ status: 'draft', ownerUid: 'g1' })));
@@ -219,9 +220,9 @@ describe('surveys', () => {
 
 describe('private events, banners and super admins', () => {
   beforeEach(() => seed(async (db) => {
-    await setDoc(doc(db, 'events/priv'), { published: false, linkAccess: true, registration: 'open' });
+    await setDoc(doc(db, 'events/priv'), { ownerUid: 'org', published: false, linkAccess: true, registration: 'open' });
     await setDoc(doc(db, 'events/priv/media/banner'), { data: 'x' });
-    await setDoc(doc(db, 'events/dr'), { published: false, registration: 'open' });
+    await setDoc(doc(db, 'events/dr'), { ownerUid: 'org', published: false, registration: 'open' });
     await setDoc(doc(db, 'events/dr/media/banner'), { data: 'x' });
     await setDoc(doc(db, 'users/ben'), { name: 'Ben', email: 'ben@x.test' });
   }));

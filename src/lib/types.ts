@@ -40,6 +40,9 @@ export interface EventDoc {
   expectedAttendees?: number;
   /** Maximum registrations, 0 or missing for no limit. Enforced by the security rules with a counter. */
   capacity?: number;
+  /** Who created the event and controls it (with the Master Admin). Older events may not have one. */
+  ownerUid?: string;
+  ownerEmail?: string;
   /** Set while the event is being deleted (stays set if a delete was interrupted). */
   deleting?: boolean;
   /** Workshop, conference, hackathon… Older events have none. */

@@ -1699,3 +1699,12 @@ button.pl-present-qr small { font-size: 11px; opacity: .7; }
 .org-nav a { white-space: nowrap; flex: none; }
 .org-nav button { white-space: nowrap; flex: none; } @media (max-width: 700px) { .org-nav { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); padding-right: 32px; } }
 .del-ev p { display: block; } .del-ev p b { display: inline; }
+
+/* Switch your mode */
+.role-toggle { display: grid; gap: 8px; }
+.role-toggle-label { font-weight: 650; font-size: 14px; }
+.role-seg button { min-height: 42px; }
+.role-toggle.compact .role-seg button { min-height: 36px; font-size: 14px; }
+.role-toggle.compact small { font-size: 12px; }
+.acct-toggle { padding: 10px 12px; margin: 4px 0; border-radius: 16px; background: var(--paper); }
+.mode-card-toggle { padding: 18px; }

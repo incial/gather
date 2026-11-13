@@ -34,7 +34,7 @@ function pickEvent(list: MembershipDoc[], now: number) {
  * what's on now and next, and your notifications, with extra controls for organisers and speakers.
  */
 export function Activity() {
-  const { user, loading } = useAuth();
+  const { user, loading, isSuper } = useAuth();
   const { canOrganise } = useMode();
   const nav = useRouter();
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/activity'); }, [loading, user, nav]);
@@ -46,11 +46,12 @@ export function Activity() {
   // Organisers also see the events they run, even ones they haven't joined as an attendee (read once).
   const [run, setRun] = useState<MembershipDoc[]>([]);
   useEffect(() => {
-    if (!canOrganise) return;
-    backend.getCol<EventDoc>('events', [], { orderBy: 'startsAt', desc: true, limit: 20 })
+    if (!canOrganise || !user) return;
+    // Events this person runs (all events for the Master Admin).
+    backend.getCol<EventDoc>('events', isSuper ? [] : [['ownerUid', user.uid]], isSuper ? { orderBy: 'startsAt', desc: true, limit: 20 } : { limit: 50 })
       .then((list) => setRun(list.map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt, endsAt: e.endsAt, venue: e.venue, color: e.color }))))
       .catch(() => {});
-  }, [canOrganise]);
+  }, [canOrganise, user, isSuper]);
   const events = useMemo(() => {
     const all = [...mine.data, ...run.filter((r) => !mine.data.some((m) => m.id === r.id))];
     return all.filter((m) => Date.parse(m.endsAt ?? m.startsAt) > now - 30 * 86_400_000).sort((a, b) => a.startsAt.localeCompare(b.startsAt));

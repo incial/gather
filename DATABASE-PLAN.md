@@ -190,3 +190,11 @@ Changes:
 - Claiming a listed entry that has an email requires that verified email (closes impersonation with the code). Entries without an email can still be claimed with the code, first come only.
 - New `EMAIL` role path: listed with your verified email = speaker role on your account, no code; joins the event if needed.
 - One speaker entry per person per event: a role can only be re-made after removal, and only with the code (removal isn't undone by email).
+
+## Proposed (13 Nov 2026): open organisers, per-event ownership, Master Admin
+
+- **Master Admin** `toincial@gmail.com` is built into the rules (`isSuper()`), with full control of every event, account and platform list. `superAdmins/{email}` still adds more super admins (Master Admin only).
+- **Open organiser registration:** any signed-in, verified Google account can create events (`canOrganise()`); no approval. The legacy `organisers` list no longer grants anything (Master Admin manages it).
+- **Ownership:** events gain `ownerUid` / `ownerEmail`. Every event-level permission (`ownsEvent(e)`) = owner or Master Admin: the event, attendees, check-ins, speakers, codes, certificates, announcements, Pulse, deletion. Ownership can only be changed by the Master Admin.
+- Existing events without `ownerUid` can only be managed by the Master Admin.
+- Dual role: same account; attendee data unchanged; mode toggle only changes the dashboard.

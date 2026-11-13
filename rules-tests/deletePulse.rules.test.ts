@@ -40,7 +40,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await seed(async (db) => {
     await setDoc(doc(db, 'organisers/boss@org.test'), {});
-    await setDoc(doc(db, 'events/e1'), { published: true, title: 'E' });
+    await setDoc(doc(db, 'events/e1'), { ownerUid: 'org', published: true, title: 'E' });
     for (const [pid, extra] of [['p1', {}], ['p2', { eventId: 'e1', code: 'EVT234' }], ['p3', { code: 'NOCODE' }]] as const) {
       await setDoc(doc(db, `pulse/${pid}`), pulse(extra));
       for (const s of SUBS) await setDoc(doc(db, `pulse/${pid}/${s}/x1`), { uid: 'ben', slideId: 'q1', hidden: false, n: 1 });

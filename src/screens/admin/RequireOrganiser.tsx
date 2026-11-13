@@ -21,8 +21,8 @@ export function RequireOrganiser({ children }: { children: ReactNode }) {
   if (!isOrganiser) {
     return (
       <div className="center">
-        <Empty title="Organisers only">
-          {user.email} doesn’t have organiser access. You can keep using Gather as an attendee, or ask an organiser to add you.
+        <Empty title="Sign in with Google to organise">
+          Organising needs a verified Google account. Guest sessions can only take part in events.
           <div className="row-center">
             <Link className="btn btn-primary btn-sm" href="/">Go to my events</Link>
             <button className="btn btn-ghost btn-sm" onClick={() => backend.signOut()}>Sign out</button>

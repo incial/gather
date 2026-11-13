@@ -12,8 +12,10 @@ import type { SpeakingDoc } from './types';
  */
 export function usePulseRole() {
   const { user } = useAuth();
-  const { canOrganise } = useMode();
+  const { mode } = useMode();
   const speaking = useCol<SpeakingDoc>(user ? `users/${user.uid}/speaking` : null);
   const speakerEvents = speaking.data.filter((s) => s.pulse);
-  return { loading: speaking.loading, organiser: canOrganise, speakerEvents, speaker: speaking.data.length > 0, canManage: canOrganise || speakerEvents.length > 0 };
+  // Anyone can organise; Pulse management shows in organiser mode (or for speakers).
+  const organiser = mode === 'organiser';
+  return { loading: speaking.loading, organiser, speakerEvents, speaker: speaking.data.length > 0, canManage: organiser || speakerEvents.length > 0 };
 }

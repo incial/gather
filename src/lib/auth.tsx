@@ -6,6 +6,9 @@ import { resetLive } from './live';
 import { ensureProfile } from './profile';
 import type { AppUser } from './types';
 
+/** The Master Admin: full control of the platform. Also built into the security rules. */
+export const MASTER_ADMIN = 'toincial@gmail.com';
+
 const SYNC_KEY = (uid: string) => `gather-synced-${uid}`;
 const fingerprint = (u: AppUser) => `${u.name}|${u.photo ?? ''}|${new Date().toISOString().slice(0, 10)}`;
 function needsSync(u: AppUser) { try { return localStorage.getItem(SYNC_KEY(u.uid)) !== fingerprint(u); } catch { return true; } }
@@ -26,15 +29,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lastUid = uid;
     if (who?.guest) { setState({ user: null, guest: who, loading: false, isOrganiser: false, isSuper: false }); return; }
     const user = who;
+    // Anyone with a verified Google account can organise (open registration); what they can touch is
+    // limited to their own events by the security rules. The Master Admin is built in.
     let isOrganiser = false;
     let isSuper = false;
     if (user?.email && user.emailVerified) {
-      const [org, sup] = await Promise.all([
-        backend.getDoc(`organisers/${user.email}`).catch(() => null),
-        backend.getDoc(`superAdmins/${user.email}`).catch(() => null),
-      ]);
-      isSuper = !!sup;
-      isOrganiser = !!org || isSuper;
+      isOrganiser = true;
+      const email = user.email.toLowerCase();
+      isSuper = email === MASTER_ADMIN || !!(await backend.getDoc(`superAdmins/${email}`).catch(() => null));
     }
     setState({ user, guest: null, loading: false, isOrganiser, isSuper });
     // Each person's profile: name, email and Google photo, refreshed on every sign-in.

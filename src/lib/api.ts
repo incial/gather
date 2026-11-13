@@ -169,19 +169,21 @@ export const saveFeedback = (eventId: string, me: AttendeeDoc, answers: Feedback
 
 /* ---------- Organiser ---------- */
 
-export async function createEvent(data: Omit<EventDoc, 'id' | 'joinCode' | 'lineup' | 'questions' | 'createdAt'>) {
+/** Creates an event owned by `owner`: only they (and the Master Admin) can manage it. */
+export async function createEvent(data: Omit<EventDoc, 'id' | 'joinCode' | 'lineup' | 'questions' | 'createdAt' | 'ownerUid'>, owner: AppUser) {
   const id = backend.newId();
   let joinCode = randomJoinCode();
-  while ((await backend.getCol('events', [['joinCode', joinCode]])).length) joinCode = randomJoinCode();
+  // Checked against listed events (the ones anyone may look up by number).
+  while ((await backend.getCol('events', [['joinCode', joinCode], ['published', true]]).catch(() => [])).length) joinCode = randomJoinCode();
   await backend.write([{ type: 'set', path: `events/${id}`, data: {
-    ...data, joinCode, lineup: [], questions: DEFAULT_QUESTIONS, createdAt: backend.now(),
+    ...data, ownerUid: owner.uid, ownerEmail: owner.email.toLowerCase(), joinCode, lineup: [], questions: DEFAULT_QUESTIONS, createdAt: backend.now(),
   } }]);
   return id;
 }
 
 /** Adds the FDP with its full schedule and speakers. Runs only when an organiser clicks the button. */
-export async function loadFdpProgramme() {
-  const eventId = await createEvent({ ...FDP_EVENT, published: false, registration: 'open', feedbackOpen: true });
+export async function loadFdpProgramme(owner: AppUser) {
+  const eventId = await createEvent({ ...FDP_EVENT, published: false, registration: 'open', feedbackOpen: true }, owner);
   await backend.write([
     ...FDP_SPEAKERS.map((s) => ({ type: 'set' as const, path: `events/${eventId}/speakers/${s.id}`, data: strip(s) })),
     ...FDP_SESSIONS.map((s) => ({ type: 'set' as const, path: `events/${eventId}/sessions/${s.id}`, data: strip(s) })),

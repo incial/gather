@@ -25,7 +25,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await seed(async (db) => {
     await setDoc(doc(db, 'organisers/boss@org.test'), {});
-    await setDoc(doc(db, E), { published: true, registration: 'open', title: 'E', joinCode: '123456' });
+    await setDoc(doc(db, E), { ownerUid: 'org', published: true, registration: 'open', title: 'E', joinCode: '123456' });
     for (const s of SUBS) await setDoc(doc(db, `${E}/${s}/x1`), { uid: 'asha', eventId: 'e1', sessionId: 's1', a: 1 });
     await setDoc(doc(db, `${E}/attendees/asha`), { uid: 'asha', email: 'asha@x.test', name: 'Asha' });
     await setDoc(doc(db, `${E}/saved/asha`), { uid: 'asha' });

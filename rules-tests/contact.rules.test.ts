@@ -32,7 +32,7 @@ afterAll(() => env.cleanup());
 beforeEach(async () => {
   await env.clearFirestore();
   await seed(async (db) => {
-    await setDoc(doc(db, E), { published: true, registration: 'open', title: 'E' });
+    await setDoc(doc(db, E), { ownerUid: 'org', published: true, registration: 'open', title: 'E' });
     for (const u of ['asha', 'ben']) await setDoc(doc(db, `${E}/attendees/${u}`), { uid: u, email: `${u}@x.test`, phone: '98470 00000', joinedAt: 't', source: 'app', name: u });
     await setDoc(doc(db, 'pings/e1_asha_ben'), { eventId: 'e1', fromUid: 'asha', toUid: 'ben', status: 'accepted', message: 'hi', updatedAt: 't' });
   });

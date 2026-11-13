@@ -20,10 +20,11 @@ import type { CertificateDoc } from '../lib/types';
 import { SavedList } from './Saved';
 import { useSwipes } from '../lib/saved';
 import { usePings } from '../components/MyPeople';
+import { RoleToggle } from '../components/RoleToggle';
 
 export function Profile() {
   const { user, loading } = useAuth();
-  const { mode, setMode, canOrganise } = useMode();
+  const { canOrganise } = useMode();
   const nav = useRouter();
   const toast = useToast();
   const prof = useDoc<PublicProfile>(user ? `profiles/${user.uid}` : null);
@@ -113,17 +114,7 @@ export function Profile() {
 
         {p && <ProfileDetails p={p} />}
 
-        {canOrganise && (
-          <section className="mode-card card">
-            <div>
-              <b>{mode === 'organiser' ? 'You’re in organiser mode' : 'You’re in attendee mode'}</b>
-              <small>Same account for both. Switch any time.</small>
-            </div>
-            {mode === 'organiser'
-              ? <button className="btn btn-ghost btn-sm" onClick={() => { setMode('attendee'); nav.push('/'); }}>Switch to Attendee</button>
-              : <button className="btn btn-ink btn-sm" onClick={() => { setMode('organiser'); nav.push('/admin'); }}><Icon name="shield" size={16} /> Switch to Organiser</button>}
-          </section>
-        )}
+        {canOrganise && <section className="card mode-card-toggle"><RoleToggle /></section>}
 
         <Link href="/speaker" className="mode-card card speaker-entry">
           <div className="grow"><b className="with-emoji"><span aria-hidden="true">🎤</span> I’m a speaker</b><small>Turn it on with your event’s speaker code. Same account, no separate login. See feedback on your talks and run Pulse sessions.</small></div>

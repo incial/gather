@@ -38,10 +38,12 @@ export function OrganiserTop({ active, onTeam }: { active: 'events' | 'god'; onT
 }
 
 export function AdminHome() {
-  const { user } = useAuth();
+  const { user, isSuper } = useAuth();
   const nav = useRouter();
-  const events = useCol<EventDoc>('events');
-  const organisers = useCol<{ id: string; addedAt?: string }>('organisers');
+  // Organisers see the events they created; the Master Admin sees every event.
+  const mine = useMemo<[string, unknown][]>(() => (isSuper ? [] : [['ownerUid', user?.uid]]), [isSuper, user?.uid]);
+  const events = useCol<EventDoc>(user ? 'events' : null, mine);
+  const organisers = useCol<{ id: string; addedAt?: string }>(isSuper ? 'organisers' : null);
   const [creating, setCreating] = useState(false);
   const [team, setTeam] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -49,10 +51,10 @@ export function AdminHome() {
   const [filter, setFilter] = useState<Filter>('all');
   const toast = useToast();
   const now = Date.now();
-  const fdpMissing = !events.loading && !events.data.some((e) => e.title === FDP_EVENT.title);
+  const fdpMissing = isSuper && !events.loading && !events.data.some((e) => e.title === FDP_EVENT.title);
   async function loadFdp() {
     setLoading(true);
-    try { nav.push(`/admin/e/${await loadFdpProgramme()}`); }
+    try { nav.push(`/admin/e/${await loadFdpProgramme(user!)}`); }
     catch (x) { toast(friendlyError(x), 'err'); setLoading(false); }
   }
   const sorted = useMemo(() => {
@@ -76,7 +78,7 @@ export function AdminHome() {
   return (
     <div className="admin">
       <DemoBanner />
-      <OrganiserTop active="events" onTeam={() => setTeam(true)} />
+      <OrganiserTop active="events" onTeam={isSuper ? () => setTeam(true) : undefined} />
       <main className="admin-main org-main">
         <section className="org-hero">
           <div>
@@ -123,7 +125,7 @@ export function AdminHome() {
       </main>
       {creating && (
         <Modal title="Create event" onClose={() => setCreating(false)}>
-          <EventForm initial={blankEvent()} submitLabel="Create event" onSubmit={async (d) => { const id = await createEvent(d); if (d.capacity) await syncCapacityCounter(id); return id; }} onDone={(id) => nav.push(`/admin/e/${id}`)} />
+          <EventForm initial={blankEvent()} submitLabel="Create event" onSubmit={async (d) => { const id = await createEvent(d, user!); if (d.capacity) await syncCapacityCounter(id); return id; }} onDone={(id) => nav.push(`/admin/e/${id}`)} />
         </Modal>
       )}
       {team && <TeamModal list={organisers.data} onClose={() => setTeam(false)} me={user?.email ?? ''} />}

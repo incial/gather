@@ -7,18 +7,20 @@ service cloud.firestore {
     // so accounts whose Google email has capital letters aren't refused.
     function myEmail() { return request.auth.token.email.lower(); }
 
-    // Organisers are listed by email in the top-level `organisers` collection.
-    // A verified email is required so nobody can claim an address they don't own.
-    function isOrganiser() {
-      return signedIn()
-        && request.auth.token.email_verified == true
-        && (exists(/databases/$(database)/documents/organisers/$(myEmail())) || isSuper());
-    }
-    // Super admins (God view) can see and manage everything on the platform.
+    // Master Admin (toincial@gmail.com) and any super admins they add: full control of the platform,
+    // every event and every account. Built into the rules, so it works even on an empty database.
     function isSuper() {
       return signedIn()
         && request.auth.token.email_verified == true
-        && exists(/databases/$(database)/documents/superAdmins/$(myEmail()));
+        && (myEmail() == 'toincial@gmail.com' || exists(/databases/$(database)/documents/superAdmins/$(myEmail())));
+    }
+    // Open organiser registration: any signed-in Google account with a verified email can create events.
+    function canOrganise() { return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous' && request.auth.token.email_verified == true; }
+    // Event-level control: only the event's owner (who created it) or the Master Admin.
+    function ownsEvent(e) {
+      return isSuper() || (signedIn()
+        && exists(/databases/$(database)/documents/events/$(e))
+        && get(/databases/$(database)/documents/events/$(e)).data.get('ownerUid', '') == request.auth.uid);
     }
     // A Google account, not a guest (anonymous) session.
     function notGuest() { return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
@@ -33,9 +35,10 @@ service cloud.firestore {
     function isSpeaker(e) { return signedIn() && exists(rolePath(e)) && get(rolePath(e)).data.active == true; }
     function speakerCanPulse(e) { return isSpeaker(e) && get(rolePath(e)).data.pulse == true; }
 
+    // Legacy organiser list. Organising is open now; only the Master Admin manages this list.
     match /organisers/{email} {
       allow get: if signedIn() && myEmail() == email;
-      allow list, write: if isOrganiser();
+      allow list, write: if isSuper();
     }
 
     match /superAdmins/{email} {
@@ -107,15 +110,15 @@ service cloud.firestore {
       allow read, write: if isMe(uid);
     }
     // When an organiser deletes an event, they remove each attendee's copy of it too (delete only).
-    match /users/{uid}/events/{e} { allow delete: if isOrganiser(); }
-    match /users/{uid}/swipes/{e} { allow delete: if isOrganiser(); }
-    match /users/{uid}/speaking/{e} { allow delete: if isOrganiser(); }
+    match /users/{uid}/events/{e} { allow delete: if ownsEvent(e); }
+    match /users/{uid}/swipes/{e} { allow delete: if ownsEvent(e); }
+    match /users/{uid}/speaking/{e} { allow delete: if ownsEvent(e); }
 
     // Meet Pings: pings/{eventId}_{from}_{to}. The ID allows one request per pair per event.
     match /pings/{pid} {
       function attendeeOf(ev, u) { return exists(/databases/$(database)/documents/events/$(ev)/attendees/$(u)); }
-      allow get: if signedIn() && (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isOrganiser());
-      allow list: if signedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isOrganiser());
+      allow get: if signedIn() && (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || ownsEvent(resource.data.eventId));
+      allow list: if signedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || ownsEvent(resource.data.eventId));
       allow create: if notGuest()
         && request.resource.data.keys().hasOnly(['eventId', 'eventTitle', 'fromUid', 'fromName', 'fromPhoto', 'toUid', 'toName', 'toPhoto', 'fromRole', 'toRole', 'message', 'status', 'createdAt', 'updatedAt'])
         && request.resource.data.get('fromRole', '') is string && request.resource.data.get('fromRole', '').size() <= 20
@@ -156,8 +159,8 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['toPhone', 'updatedAt'])
           && request.resource.data.toPhone is string && request.resource.data.toPhone.size() <= 20)
       );
-      // Organisers remove an event's pings when deleting the event.
-      allow delete: if isOrganiser();
+      // The event's owner removes its pings when deleting the event.
+      allow delete: if ownsEvent(resource.data.eventId);
     }
 
     // Notifications are written by the person whose action caused them, read only by the recipient.
@@ -187,7 +190,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'at', 'message'])
         && request.resource.data.read == false && request.resource.data.at == request.time;
       // When an event is deleted, its Meet Ping notifications go too (only while the event is being deleted).
-      allow delete: if isOrganiser() && resource.data.get('eventId', '') != ''
+      allow delete: if resource.data.get('eventId', '') != '' && ownsEvent(resource.data.eventId)
         && get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.get('deleting', false) == true;
     }
 
@@ -197,16 +200,16 @@ service cloud.firestore {
     // The event's shared speaker code: looked up only by its exact value, never listed.
     match /speakerCodes/{code} {
       allow get: if signedIn();
-      allow list, delete: if isOrganiser();
-      allow create: if isOrganiser() && code.matches('^[A-Z0-9]{10}$')
+      allow list, delete: if ownsEvent(resource.data.eventId);
+      allow create: if ownsEvent(request.resource.data.eventId) && code.matches('^[A-Z0-9]{10}$')
         && request.resource.data.revoked == false && request.resource.data.common == true;
-      allow update: if isOrganiser();
+      allow update: if ownsEvent(resource.data.eventId) && request.resource.data.eventId == resource.data.eventId;
     }
 
     // Four-digit speaker code (PIN) for each event. Only organisers can read it.
     match /speakerPins/{e} {
-      allow read, delete: if isOrganiser();
-      allow create, update: if isOrganiser()
+      allow read, delete: if ownsEvent(e);
+      allow create, update: if ownsEvent(e)
         && request.resource.data.keys().hasOnly(['pin', 'revoked', 'expiresAt', 'eventTitle', 'createdAt'])
         && request.resource.data.pin is string && request.resource.data.pin.matches('^[0-9]{4}$')
         && request.resource.data.revoked is bool
@@ -216,26 +219,33 @@ service cloud.firestore {
     // Issued certificates. Anyone with the (long, random) ID can verify one; only organisers issue them.
     match /certificates/{id} {
       allow get: if true;
-      allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
-      allow write: if isOrganiser();
+      allow list: if ownsEvent(resource.data.eventId) || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if ownsEvent(request.resource.data.eventId);
+      allow update, delete: if ownsEvent(resource.data.eventId);
     }
 
     match /events/{e} {
       // Private events (linkAccess) open with their link but are never listed.
       // A deleted event reads as missing (not as an error), so apps can tidy up.
-      allow get: if resource == null || resource.data.published == true || resource.data.get('linkAccess', false) == true || isOrganiser();
-      allow list: if resource.data.published == true || isOrganiser();
-      allow write: if isOrganiser();
+      allow get: if resource == null || resource.data.published == true || resource.data.get('linkAccess', false) == true
+        || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid) || isSuper();
+      allow list: if resource.data.published == true || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid) || isSuper();
+      // Anyone can organise: the creator becomes the owner.
+      allow create: if canOrganise() && request.resource.data.ownerUid == request.auth.uid;
+      // Only the owner (or the Master Admin) edits or deletes it. Ownership never changes, except by the Master Admin.
+      allow update: if isSuper() || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid
+        && request.resource.data.get('ownerUid', '') == request.auth.uid);
+      allow delete: if isSuper() || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid);
 
       match /sessions/{s} {
-        allow read: if eventDoc(e).published == true || eventDoc(e).get('linkAccess', false) == true || isOrganiser();
-        allow write: if isOrganiser();
+        allow read: if eventDoc(e).published == true || eventDoc(e).get('linkAccess', false) == true || ownsEvent(e);
+        allow write: if ownsEvent(e);
       }
 
       // The full-size banner, read only on the event page.
       match /media/{d} {
-        allow get: if eventDoc(e).published == true || eventDoc(e).get('linkAccess', false) == true || isAttendee(e) || isOrganiser();
-        allow list, write: if isOrganiser();
+        allow get: if eventDoc(e).published == true || eventDoc(e).get('linkAccess', false) == true || isAttendee(e) || ownsEvent(e);
+        allow list, write: if ownsEvent(e);
       }
 
       // Speaker records include contact details, so attendees only.
@@ -250,12 +260,12 @@ service cloud.firestore {
             && d.get('photo', '') is string && d.get('photo', '').size() <= 200000
             && d.get('bio', '') is string && d.get('bio', '').size() <= 1500;
         }
-        allow read: if isAttendee(e) || isOrganiser() || isSpeaker(e);
+        allow read: if isAttendee(e) || ownsEvent(e) || isSpeaker(e);
         // Anyone signed in can find the speaker entry the organiser made with their own verified email,
         // so a listed speaker can claim it before joining the event.
         allow list, get: if signedIn() && request.auth.token.email_verified == true
           && resource.data.get('emailLower', '') != '' && resource.data.get('emailLower', '') == myEmail();
-        allow write: if isOrganiser();
+        allow write: if ownsEvent(e);
         // Not on the organiser's list: a speaker adds themselves (profile ID = their account ID).
         allow create: if isMe(s) && request.resource.data.uid == request.auth.uid && becomingThisSpeaker() && cleanSpeaker(request.resource.data)
           && request.resource.data.get('pinned', false) == false && request.resource.data.get('featured', false) == false
@@ -275,8 +285,8 @@ service cloud.firestore {
 
       // Wi-Fi details: joined attendees only, so they can't sit on the public event doc.
       match /private/{d} {
-        allow read: if isAttendee(e) || isOrganiser();
-        allow write: if isOrganiser();
+        allow read: if isAttendee(e) || ownsEvent(e);
+        allow write: if ownsEvent(e);
       }
 
       // The People list. Only these fields are allowed; email and phone only when the person chose to share them.
@@ -290,38 +300,38 @@ service cloud.firestore {
             && d.get('email', '') == a.get('email', '') && d.get('phone', '') == a.get('phone', '')
           );
         }
-        allow read: if isAttendee(e) || isOrganiser();
+        allow read: if isAttendee(e) || ownsEvent(e);
         allow create, update: if isMe(uid)
           && existsAfter(/databases/$(database)/documents/events/$(e)/attendees/$(uid))
           && request.resource.data.uid == uid
           && request.resource.data.keys().hasOnly(['uid', 'name', 'institution', 'department', 'designation', 'photo', 'email', 'phone'])
           && contactOk(request.resource.data);
-        allow delete: if isMe(uid) || isOrganiser();
+        allow delete: if isMe(uid) || ownsEvent(e);
       }
 
       // Who saved this event in Explore.
       match /saved/{uid} {
-        allow read: if isMe(uid) || isOrganiser();
+        allow read: if isMe(uid) || ownsEvent(e);
         allow create, update: if isMe(uid)
           && request.resource.data.uid == uid
           && request.resource.data.email == myEmail()
           && (eventDoc(e).published == true || eventDoc(e).get('linkAccess', false) == true);
-        allow delete: if isMe(uid) || isOrganiser();
+        allow delete: if isMe(uid) || ownsEvent(e);
       }
 
       // Rotating check-in keys. Attendees can never read these; the attendance
       // rule below compares against them on the server.
       match /sessionKeys/{s} {
-        allow read, write: if isOrganiser();
+        allow read, write: if ownsEvent(e);
       }
 
       match /preregistered/{email} {
-        allow get: if isOrganiser() || (signedIn() && myEmail() == email);
-        allow list, write: if isOrganiser();
+        allow get: if ownsEvent(e) || (signedIn() && myEmail() == email);
+        allow list, write: if ownsEvent(e);
       }
 
       match /attendees/{uid} {
-        allow read: if isMe(uid) || isOrganiser();
+        allow read: if isMe(uid) || ownsEvent(e);
         function counterPath() { return /databases/$(database)/documents/events/$(e)/counters/attendees; }
         function newSpeaker() { return existsAfter(/databases/$(database)/documents/events/$(e)/roles/$(uid)) && getAfter(/databases/$(database)/documents/events/$(e)/roles/$(uid)).data.active == true; }
         // With a capacity, each self-registration must add exactly one to the counter (which can't pass the capacity).
@@ -332,7 +342,7 @@ service cloud.firestore {
             || request.resource.data.get('checkedInAt', null) == request.time
             || (resource != null && resource.data.get('checkedIn', false) == true && request.resource.data.get('checkedInAt', null) == resource.data.get('checkedInAt', null));
         }
-        allow create: if (isOrganiser() && checkInTimeOk()) || (
+        allow create: if (ownsEvent(e) && checkInTimeOk()) || (
           isMe(uid)
           && request.resource.data.uid == uid
           && request.resource.data.email == myEmail()
@@ -357,7 +367,7 @@ service cloud.firestore {
             && d.checkedIn == true && d.checkInMethod == 'self' && d.checkedInBy == uid && d.checkedInAt == request.time
             && existsAfter(att) && getAfter(att).data.uid == uid && getAfter(att).data.at == request.time;
         }
-        allow update: if (isOrganiser() && checkInTimeOk() && checkInByOk()) || (
+        allow update: if (ownsEvent(e) && checkInTimeOk() && checkInByOk()) || (
           isMe(uid)
           && request.resource.data.uid == uid
           && request.resource.data.email == resource.data.email
@@ -367,18 +377,18 @@ service cloud.firestore {
           && (selfCheckIn() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['checkedIn', 'checkedInAt', 'checkInMethod', 'checkedInBy', 'checkInSession']))
           && (!('regId' in resource.data) || request.resource.data.get('regId', '') == resource.data.regId)
         );
-        allow delete: if isOrganiser();
+        allow delete: if ownsEvent(e);
       }
 
       // Organiser announcements, shown in Activity to the event's attendees and speakers.
       match /announcements/{id} {
-        allow read: if isAttendee(e) || isOrganiser() || isSpeaker(e);
-        allow create: if isOrganiser()
+        allow read: if isAttendee(e) || ownsEvent(e) || isSpeaker(e);
+        allow create: if ownsEvent(e)
           && request.resource.data.keys().hasOnly(['text', 'by', 'byName', 'at'])
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
           && request.resource.data.by == request.auth.uid && request.resource.data.byName is string && request.resource.data.byName.size() <= 80
           && request.resource.data.at == request.time;
-        allow delete: if isOrganiser();
+        allow delete: if ownsEvent(e);
         allow update: if false;
       }
 
@@ -389,12 +399,12 @@ service cloud.firestore {
             && d.uid is string && d.action in ['in', 'undo'] && d.method in ['pass', 'manual', 'self', '']
             && d.by == request.auth.uid && d.at == request.time;
         }
-        allow read: if isOrganiser();
-        allow create: if (isOrganiser() && entryOk(request.resource.data))
+        allow read: if ownsEvent(e);
+        allow create: if (ownsEvent(e) && entryOk(request.resource.data))
           || (isMe(request.resource.data.uid) && entryOk(request.resource.data) && request.resource.data.method == 'self' && request.resource.data.action == 'in');
         allow update: if false;
         // Only removed when the whole event is being deleted.
-        allow delete: if isOrganiser() && eventDoc(e).get('deleting', false) == true;
+        allow delete: if ownsEvent(e) && eventDoc(e).get('deleting', false) == true;
       }
 
       match /attendance/{id} {
@@ -405,9 +415,9 @@ service cloud.firestore {
             && request.resource.data.key.size() == 6
             && (request.resource.data.key == k.key || request.resource.data.key == k.prev);
         }
-        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
-        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
-        allow create: if isOrganiser() || (
+        allow get: if ownsEvent(e) || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if ownsEvent(e) || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create: if ownsEvent(e) || (
           isAttendee(e)
           && request.resource.data.uid == request.auth.uid
           && id == request.resource.data.sessionId + '_' + request.auth.uid
@@ -415,54 +425,54 @@ service cloud.firestore {
           && request.resource.data.at == request.time
           && keyIsLive()
         );
-        allow update, delete: if isOrganiser();
+        allow update, delete: if ownsEvent(e);
       }
 
       match /feedback/{uid} {
-        allow read: if isMe(uid) || isOrganiser();
-        allow create, update: if isOrganiser() || (
+        allow read: if isMe(uid) || ownsEvent(e);
+        allow create, update: if ownsEvent(e) || (
           isMe(uid) && isAttendee(e)
           && eventDoc(e).feedbackOpen == true
           && request.resource.data.uid == uid
         );
-        allow delete: if isOrganiser();
+        allow delete: if ownsEvent(e);
       }
 
       // One rating per person per session, only where the organiser left feedback on.
       match /sessionFeedback/{id} {
-        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
-        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow get: if ownsEvent(e) || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if ownsEvent(e) || (signedIn() && resource.data.uid == request.auth.uid);
         allow create, update: if isAttendee(e)
           && request.resource.data.uid == request.auth.uid
           && id == request.resource.data.sessionId + '_' + request.auth.uid
           && request.resource.data.rating is int
           && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
           && get(/databases/$(database)/documents/events/$(e)/sessions/$(request.resource.data.sessionId)).data.get('feedbackOn', true) == true;
-        allow delete: if isOrganiser();
+        allow delete: if ownsEvent(e);
       }
 
       // Event assets: attendees read, organisers manage. Files sit in their own documents
       // (read only on download) and must stay under about 700 KB.
       match /assets/{a} {
-        allow read: if isAttendee(e) || isOrganiser();
-        allow write: if isOrganiser();
+        allow read: if isAttendee(e) || ownsEvent(e);
+        allow write: if ownsEvent(e);
       }
       match /assetFiles/{a} {
-        allow get: if isAttendee(e) || isOrganiser();
-        allow list: if isOrganiser();
-        allow create, update: if isOrganiser()
+        allow get: if isAttendee(e) || ownsEvent(e);
+        allow list: if ownsEvent(e);
+        allow create, update: if ownsEvent(e)
           && request.resource.data.keys().hasOnly(['data', 'mime', 'name'])
           && request.resource.data.data is string && request.resource.data.data.size() <= 960000;
-        allow delete: if isOrganiser();
+        allow delete: if ownsEvent(e);
       }
 
       // Registration counter, used only when the event has a capacity.
       match /counters/{d} {
         allow get: if signedIn();
         // Organisers list them when deleting the event.
-        allow list: if isOrganiser();
-        allow create, delete: if isOrganiser();
-        allow update: if isOrganiser() || (
+        allow list: if ownsEvent(e);
+        allow create, delete: if ownsEvent(e);
+        allow update: if ownsEvent(e) || (
           signedIn()
           && request.resource.data.keys().hasOnly(['n'])
           && request.resource.data.n == resource.data.n + 1
@@ -482,8 +492,8 @@ service cloud.firestore {
           return d.keys().hasOnly(['pin', 'n', 'ok', 'at']) && d.pin is string && d.pin.matches('^[0-9]{4}$')
             && d.ok == false && d.at == request.time && d.n is int;
         }
-        allow get: if isMe(uid) || isOrganiser();
-        allow list, delete: if isOrganiser();
+        allow get: if isMe(uid) || ownsEvent(e);
+        allow list, delete: if ownsEvent(e);
         allow create: if isMe(uid) && notGuest() && guessOk(request.resource.data) && request.resource.data.n == 1;
         allow update: if isMe(uid) && notGuest() && (
           (guessOk(request.resource.data) && request.resource.data.n == resource.data.n + 1 && request.resource.data.n <= 10)
@@ -534,12 +544,12 @@ service cloud.firestore {
             && data.pulse == c.pulse
             && sp.get('uid', '') == request.auth.uid;
         }
-        allow get: if isMe(uid) || isOrganiser();
-        allow list, delete: if isOrganiser();
+        allow get: if isMe(uid) || ownsEvent(e);
+        allow list, delete: if ownsEvent(e);
         allow create: if pinOk() || codeOk() || emailOk();
         // One speaker entry per person per event: the role can only be re-made after it was removed,
         // and then only with the speaker code (an organiser's removal isn't undone by email matching).
-        allow update: if isOrganiser() || (resource.data.get('active', false) == false && (pinOk() || codeOk()));
+        allow update: if ownsEvent(e) || (resource.data.get('active', false) == false && (pinOk() || codeOk()));
       }
 
       // Attendee → speaker feedback. Anonymous feedback holds no name, photo or account ID,
@@ -548,7 +558,7 @@ service cloud.firestore {
         function myRole() { return get(rolePath(e)).data; }
         function ownerId() { return request.resource.data.speakerId + '_' + request.auth.uid; }
         function ownerPath() { return /databases/$(database)/documents/events/$(e)/speakerFeedbackOwners/$(ownerId()); }
-        allow get, list: if isOrganiser() || (isSpeaker(e) && myRole().speakerId == resource.data.speakerId && resource.data.status in ['visible', 'reported']);
+        allow get, list: if ownsEvent(e) || (isSpeaker(e) && myRole().speakerId == resource.data.speakerId && resource.data.status in ['visible', 'reported']);
         allow create: if signedIn() && isAttendee(e) && !isSpeaker(e)
           && request.resource.data.keys().hasOnly(['speakerId', 'rating', 'text', 'anonymous', 'uid', 'name', 'photo', 'status', 'at'])
           && exists(/databases/$(database)/documents/events/$(e)/speakers/$(request.resource.data.speakerId))
@@ -561,17 +571,17 @@ service cloud.firestore {
               : (request.resource.data.uid == request.auth.uid && request.resource.data.name is string && request.resource.data.name.size() <= 80
                  && request.resource.data.photo is string && request.resource.data.photo.size() <= 600))
           && !exists(ownerPath()) && existsAfter(ownerPath()) && getAfter(ownerPath()).data.fid == fid;
-        allow update: if isOrganiser() || (
+        allow update: if ownsEvent(e) || (
           isSpeaker(e) && myRole().speakerId == resource.data.speakerId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
           && resource.data.status == 'visible' && request.resource.data.status == 'reported'
         );
-        allow delete: if isOrganiser();
+        allow delete: if ownsEvent(e);
       }
       // Who wrote which feedback: the writer and organisers only. One per attendee per speaker.
       match /speakerFeedbackOwners/{oid} {
-        allow get: if isOrganiser() || (signedIn() && oid.matches('^.+_' + request.auth.uid + '$'));
-        allow list, delete: if isOrganiser();
+        allow get: if ownsEvent(e) || (signedIn() && oid.matches('^.+_' + request.auth.uid + '$'));
+        allow list, delete: if ownsEvent(e);
         allow create: if signedIn()
           && request.resource.data.keys().hasOnly(['uid', 'speakerId', 'fid', 'at'])
           && request.resource.data.uid == request.auth.uid
@@ -582,17 +592,17 @@ service cloud.firestore {
 
       // Which certificate belongs to whom, for this event.
       match /certIndex/{uid} {
-        allow get: if isMe(uid) || isOrganiser();
-        allow list, write: if isOrganiser();
+        allow get: if isMe(uid) || ownsEvent(e);
+        allow list, write: if ownsEvent(e);
       }
 
       match /connections/{id} {
-        allow get: if isOrganiser() || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
-        allow list: if isOrganiser() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow get: if ownsEvent(e) || (signedIn() && (resource == null || resource.data.uid == request.auth.uid));
+        allow list: if ownsEvent(e) || (signedIn() && resource.data.uid == request.auth.uid);
         allow create, update: if isAttendee(e)
           && request.resource.data.uid == request.auth.uid
           && id == request.auth.uid + '_' + request.resource.data.speakerId;
-        allow delete: if isOrganiser();
+        allow delete: if ownsEvent(e);
       }
     }
       // ---------- Gather Pulse ----------
@@ -606,19 +616,20 @@ service cloud.firestore {
       // the event's speakers). A missing code record never blocks deleting a session.
       function codePulse() { return /databases/$(database)/documents/pulse/$(resource.data.pid); }
       allow delete: if notGuest() && (resource == null
-        || resource.data.ownerUid == request.auth.uid || isSuper() || isOrganiser()
-        || (exists(codePulse()) && get(codePulse()).data.get('eventId', '') != '' && speakerCanPulse(get(codePulse()).data.eventId)));
+        || resource.data.ownerUid == request.auth.uid || isSuper()
+        || (exists(codePulse()) && get(codePulse()).data.get('eventId', '') != ''
+          && (ownsEvent(get(codePulse()).data.eventId) || speakerCanPulse(get(codePulse()).data.eventId))));
     }
 
     match /pulse/{p} {
       function pd() { return get(/databases/$(database)/documents/pulse/$(p)).data; }
       // For writes in the same batch that creates the presentation, check it as it will be after the batch.
       function owns() { return canManage(pd()) || canManage(getAfter(/databases/$(database)/documents/pulse/$(p)).data); }
-      function canManage(d) { return notGuest() && (d.ownerUid == request.auth.uid || (d.eventId != '' && (isOrganiser() || speakerCanPulse(d.eventId))) || isSuper()); }
+      function canManage(d) { return notGuest() && (d.ownerUid == request.auth.uid || (d.eventId != '' && (ownsEvent(d.eventId) || speakerCanPulse(d.eventId))) || isSuper()); }
       function accessOk(d) {
         return d.access == 'public' ? signedIn()
           : d.access == 'signedIn' ? notGuest()
-          : d.eventId != '' && (isAttendee(d.eventId) || isOrganiser());
+          : d.eventId != '' && (isAttendee(d.eventId) || ownsEvent(d.eventId));
       }
       function canSee(d) { return d.status in ['live', 'published', 'closed'] && accessOk(d); }
       // Locked (password) presentations: answers must carry the key of an existing vault document.
@@ -627,15 +638,16 @@ service cloud.firestore {
       function anonOk(d, data) { return d.anonymous != true || data.name == ''; }
 
       allow get: if canManage(resource.data) || canSee(resource.data);
-      allow list: if notGuest() && (resource.data.ownerUid == request.auth.uid || (resource.data.eventId != '' && (isOrganiser() || speakerCanPulse(resource.data.eventId))) || isSuper()
+      allow list: if notGuest() && (resource.data.ownerUid == request.auth.uid || (resource.data.eventId != '' && (ownsEvent(resource.data.eventId) || speakerCanPulse(resource.data.eventId))) || isSuper()
         || (resource.data.status in ['live', 'published'] && resource.data.eventId != '' && isAttendee(resource.data.eventId)));
       allow create: if notGuest()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.status == 'draft'
         && request.resource.data.kind in ['presentation', 'survey']
         && request.resource.data.access in ['public', 'signedIn', 'event']
-        // Only organisers, and speakers for their own event, can create Pulse sessions. Attendees take part in them.
-        && (isOrganiser() || (request.resource.data.eventId != '' && speakerCanPulse(request.resource.data.eventId)));
+        // Organisers (anyone in organiser mode) run their own sessions; for an event, only its owner or its speakers.
+        && (request.resource.data.eventId == '' ? canOrganise()
+          : (ownsEvent(request.resource.data.eventId) || speakerCanPulse(request.resource.data.eventId)));
       allow update: if canManage(resource.data)
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.eventId == resource.data.eventId

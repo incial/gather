@@ -8,11 +8,12 @@ import { backend } from '../lib/backend';
 import { useMode } from '../lib/mode';
 import { Avatar, Icon } from './ui';
 import { NotificationBell } from './NotificationBell';
+import { RoleToggle } from './RoleToggle';
 
 /** Profile menu with the Organiser / Attendee switch. Shown on every signed-in screen. */
 export function AccountMenu({ photo }: { photo?: string }) {
   const { user, isSuper } = useAuth();
-  const { mode, setMode, canOrganise } = useMode();
+  const { mode, canOrganise } = useMode();
   const nav = useRouter();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -26,7 +27,6 @@ export function AccountMenu({ photo }: { photo?: string }) {
   }, [open]);
   if (!user) return null;
 
-  const switchTo = (m: 'attendee' | 'organiser') => { setMode(m); setOpen(false); nav.push(m === 'organiser' ? '/admin' : '/'); };
   return (
     <div className="acct" ref={box}>
       <NotificationBell />
@@ -46,9 +46,7 @@ export function AccountMenu({ photo }: { photo?: string }) {
           <Link role="menuitem" href="/speaker" onClick={() => setOpen(false)}><Icon name="mic" size={18} /> Speaker area</Link>
           <Link role="menuitem" href="/inbox" onClick={() => setOpen(false)}><Icon name="people" size={18} /> Meet Pings</Link>
           {isSuper && <Link role="menuitem" href="/god" onClick={() => setOpen(false)}><Icon name="verified" size={18} /> God view</Link>}
-          {canOrganise && (mode === 'organiser'
-            ? <button role="menuitem" onClick={() => switchTo('attendee')}><Icon name="ticket" size={18} /> Switch to Attendee</button>
-            : <button role="menuitem" onClick={() => switchTo('organiser')}><Icon name="shield" size={18} /> Switch to Organiser</button>)}
+          <div className="acct-toggle"><RoleToggle compact onSwitched={() => setOpen(false)} /></div>
           <button role="menuitem" className="acct-out" onClick={() => { setOpen(false); backend.signOut().then(() => nav.replace('/')); }}><Icon name="back" size={18} /> Sign out</button>
         </div>
       )}

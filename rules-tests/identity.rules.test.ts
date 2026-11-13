@@ -53,7 +53,7 @@ beforeEach(async () => {
   await seed(async (db) => {
     await setDoc(doc(db, 'organisers/boss@org.test'), {});
     for (const id of ['e1', 'e2']) {
-      await setDoc(doc(db, `events/${id}`), { published: true, registration: 'invite', title: id });
+      await setDoc(doc(db, `events/${id}`), { ownerUid: 'org', published: true, registration: 'invite', title: id });
       await setDoc(doc(db, `speakerPins/${id}`), { pin: PIN, revoked: false, expiresAt: future(), eventTitle: id, createdAt: Timestamp.now() });
     }
     // Organiser-listed speakers: Priya with her email, Sam with his, one with no email.

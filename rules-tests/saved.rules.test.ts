@@ -12,9 +12,9 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (c) => {
     const db = c.firestore();
-    await setDoc(doc(db, 'events/e1'), { published: true, title: 'E' });
-    await setDoc(doc(db, 'events/priv'), { published: false, linkAccess: true, title: 'P' });
-    await setDoc(doc(db, 'events/draft'), { published: false, title: 'D' });
+    await setDoc(doc(db, 'events/e1'), { ownerUid: 'org', published: true, title: 'E' });
+    await setDoc(doc(db, 'events/priv'), { ownerUid: 'org', published: false, linkAccess: true, title: 'P' });
+    await setDoc(doc(db, 'events/draft'), { ownerUid: 'org', published: false, title: 'D' });
     await setDoc(doc(db, 'organisers/boss@org.test'), {});
   });
 });
@@ -54,8 +54,8 @@ describe('saved events', () => {
     await assertSucceeds(deleteDoc(doc(db, 'users/asha/swipes/e1')));
     await assertSucceeds(deleteDoc(doc(db, 'events/e1/saved/asha')));
   });
-  it('organisers with a capitalised Google email are still recognised', async () => {
-    const db = ctx('boss', 'Boss@Org.test');
+  it('the Master Admin is recognised even with a capitalised Google email', async () => {
+    const db = ctx('master', 'Toincial@Gmail.com');
     await assertSucceeds(setDoc(doc(db, 'events/e1'), { title: 'Renamed' }, { merge: true }));
   });
 });

@@ -8,6 +8,7 @@ import { useCol, useDoc } from '../../lib/live';
 import type { EventDoc, EventInfoDoc, SessionDoc, SpeakerDoc } from '../../lib/types';
 import { AdminCtx } from './context';
 import { AccountMenu } from '../../components/AccountMenu';
+import { useAuth } from '../../lib/auth';
 
 const TABS = [
   ['', 'Overview'], ['details', 'Details'], ['agenda', 'Schedule'], ['speakers', 'Speakers'],
@@ -18,13 +19,17 @@ export function AdminEventLayout({ children }: { children: ReactNode }) {
   const { id } = useParams<{ id: string }>();
   const pathname = usePathname();
   const base = `events/${id}`;
+  const { user, isSuper } = useAuth();
   const event = useDoc<EventDoc>(base);
-  const info = useDoc<EventInfoDoc>(`${base}/private/info`);
-  const sessions = useCol<SessionDoc>(`${base}/sessions`);
-  const speakers = useCol<SpeakerDoc>(`${base}/speakers`);
+  // Only the event's owner (who created it) or the Master Admin manages it. The rules enforce this too.
+  const owns = !!event.data && (isSuper || (!!user && event.data.ownerUid === user.uid));
+  const info = useDoc<EventInfoDoc>(owns ? `${base}/private/info` : null);
+  const sessions = useCol<SessionDoc>(owns ? `${base}/sessions` : null);
+  const speakers = useCol<SpeakerDoc>(owns ? `${base}/speakers` : null);
 
   if (event.loading) return <div className="center"><Spinner /></div>;
   if (!event.data) return <div className="center"><Empty title="Event not found"><Link href="/admin">Back to events</Link></Empty></div>;
+  if (!owns) return <div className="center"><Empty title="You don’t manage this event">Only the organiser who created it can manage it. <Link href="/admin">Back to your events</Link></Empty></div>;
 
   return (
     <AdminCtx.Provider value={{ event: event.data, info: info.data, sessions: sessions.data, speakers: speakers.data }}>
