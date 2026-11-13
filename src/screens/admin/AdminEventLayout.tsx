@@ -12,7 +12,7 @@ import { useAuth } from '../../lib/auth';
 
 const TABS = [
   ['', 'Overview'], ['details', 'Details'], ['agenda', 'Schedule'], ['speakers', 'Speakers'],
-  ['people', 'People'], ['attendance', 'Attendance'], ['activities', 'Activities'], ['feedback', 'Feedback'], ['assets', 'Assets'], ['certificates', 'Certificates'], ['data', 'Data & CSV'],
+  ['people', 'People'], ['attendance', 'Attendance'], ['updates', 'Updates'], ['activities', 'Activities'], ['feedback', 'Feedback'], ['assets', 'Assets'], ['certificates', 'Certificates'], ['data', 'Data & CSV'],
 ];
 
 export function AdminEventLayout({ children }: { children: ReactNode }) {

@@ -44,17 +44,18 @@ export function LinkedinIcon({ size = 20 }: { size?: number }) {
 }
 
 /**
- * The attendee menu bar: Home, People, Live, Alerts and Profile (with your photo). Joining, scanning,
- * Explore and Pulse live on Home; organiser tools are in organiser mode.
+ * The attendee menu bar: Home, Explore, People, Live, Alerts and Profile (with your photo). Joining
+ * and Pulse live on Home; organiser tools are in organiser mode.
  */
 export function GlobalNav() {
   const pathname = usePathname();
   const { user } = useAuth();
   const unread = useCol<{ id: string }>(user ? `users/${user.uid}/notifications` : null, useMemo<[string, unknown][]>(() => [['read', false]], []));
   const n = unread.data.length;
-  const homeish = pathname === '/' || ['/explore', '/join', '/saved', '/pulse'].some((p) => pathname.startsWith(p));
+  const homeish = pathname === '/' || ['/join', '/saved', '/pulse'].some((p) => pathname.startsWith(p));
   const items: { href: string; label: string; icon?: IconName; on: boolean; badge?: number; avatar?: boolean }[] = [
     { href: '/', label: 'Home', icon: 'home', on: homeish },
+    { href: '/explore', label: 'Explore', icon: 'compass', on: pathname.startsWith('/explore') },
     { href: '/people', label: 'People', icon: 'people', on: pathname.startsWith('/people') },
     { href: '/activity', label: 'Live', icon: 'live', on: pathname.startsWith('/activity') },
     { href: '/inbox', label: 'Alerts', icon: 'bell', on: pathname.startsWith('/inbox'), badge: n },

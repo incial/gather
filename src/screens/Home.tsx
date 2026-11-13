@@ -1,5 +1,6 @@
 'use client';
 
+import { LiveUpdates } from '../components/LiveUpdates';
 import { useMyEvents } from '../lib/myEvents';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
@@ -75,30 +76,29 @@ function MyEvents() {
       <main className="dash-main home-main">
         <h1 className="hello">Hello, <span className="grad-text">{first}</span></h1>
 
-        {live.length > 0 && (
-          <section className="home-live" aria-labelledby="home-live-h">
-            <h2 id="home-live-h"><span className="live-dot" aria-hidden="true" /> Happening now</h2>
-            {live.map((m) => (
-              <article key={m.id} className={`live-card a-${m.color}`}>
-                <div className="grow">
-                  <span className="tag">You’re attending</span>
-                  <h3>{m.title}</h3>
-                  <p>{m.venue} · until {fmtTime(m.endsAt ?? m.startsAt)}</p>
-                </div>
-                <div className="live-card-actions">
-                  <Link className="btn btn-white btn-sm" href={`/e/${m.id}`}>Open event</Link>
-                  <Link className="btn btn-glass btn-sm" href={`/e/${m.id}/pass`}><Icon name="ticket" size={15} /> My pass</Link>
-                  <Link className="btn btn-glass btn-sm" href={`/e/${m.id}/schedule`}><Icon name="calendar" size={15} /> Schedule</Link>
-                </div>
-              </article>
-            ))}
-          </section>
-        )}
-
+        {/* 1. The two main actions, first. */}
         <div className="home-actions">
           <Link href="/join" className="home-action a-blue"><span className="home-action-ic"><Icon name="scan" size={24} /></span><b>Join an event</b><small>Scan the event’s QR code or type its 6-digit number</small></Link>
           <Link href="/explore" className="home-action a-lime"><span className="home-action-ic"><Icon name="compass" size={24} /></span><b>Explore events</b><small>Find what’s coming up</small></Link>
         </div>
+
+        {/* 2. Live updates: events happening now, then polls, notices, files, feedback and notifications. */}
+        <LiveUpdates events={mine.data} uid={user!.uid}>
+          {live.map((m) => (
+            <article key={m.id} className={`live-card a-${m.color}`}>
+              <div className="grow">
+                <span className="tag"><span className="live-dot" aria-hidden="true" /> Happening now</span>
+                <h3>{m.title}</h3>
+                <p>{m.venue} · until {fmtTime(m.endsAt ?? m.startsAt)}</p>
+              </div>
+              <div className="live-card-actions">
+                <Link className="btn btn-white btn-sm" href={`/e/${m.id}`}>Open event</Link>
+                <Link className="btn btn-glass btn-sm" href={`/e/${m.id}/pass`}><Icon name="ticket" size={15} /> My pass</Link>
+                <Link className="btn btn-glass btn-sm" href={`/e/${m.id}/schedule`}><Icon name="calendar" size={15} /> Schedule</Link>
+              </div>
+            </article>
+          ))}
+        </LiveUpdates>
 
         <h2>My events</h2>
         {mine.error ? <LoadError /> : mine.loading ? <Spinner /> : mine.data.length === 0 ? (

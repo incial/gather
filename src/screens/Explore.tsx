@@ -4,7 +4,7 @@ import { useMyEvents } from '../lib/myEvents';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Avatar, confetti, Empty, Icon, Spinner, useToast } from '../components/ui';
+import { Avatar, confetti, Empty, GlobalNav, Icon, Spinner, useToast } from '../components/ui';
 import { forgetDeletedEvents, quickJoin } from '../lib/api';
 import { EVENT_TYPES, TYPE_ORDER, typeInfo, type EventType } from '../lib/eventTypes';
 import { swipe, useSwipes } from '../lib/saved';
@@ -224,6 +224,7 @@ export function Explore() {
           <p className="reel-hint">{stage === 'skipped' ? 'You’ve seen everything new. These are events you skipped earlier. · ' : stage === 'loop' && (loops > 0 || gone.length > 0 || swipes.all.length > 0) ? 'Round again through what’s coming up. · ' : ''}Scroll for more · Right to save · Left to skip</p>
         </>
       )}
+      <GlobalNav />
     </div>
   );
 }

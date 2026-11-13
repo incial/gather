@@ -1743,3 +1743,23 @@ button.pl-present-qr small { font-size: 11px; opacity: .7; }
 .global-nav a span.gn-ic { display: grid !important; }
 .global-nav a span.avatar { display: inline-grid !important; }
 .join-head { display: grid; gap: 6px; } .join-scan { min-height: 64px; font-size: 17px; }
+
+/* Live updates (Home) */
+.lu { display: grid; gap: 10px; }
+.lu h2 { display: flex; align-items: center; gap: 8px; }
+.lu-empty { padding: 14px 16px; border-radius: 20px; background: #fff; box-shadow: var(--edge); color: var(--ink-2); }
+.lu-list { display: grid; gap: 8px; }
+.lu-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 20px; background: #fff; box-shadow: var(--edge); text-decoration: none; color: inherit; transition: transform .4s var(--spring); animation: settle .5s var(--ease-out); }
+.lu-item:active { transform: scale(.98); }
+.lu-item .grow { display: grid; gap: 1px; min-width: 0; }
+.lu-item b { overflow-wrap: anywhere; }
+.lu-item small:first-child { font-weight: 650; color: var(--ink-2); }
+.lu-ic { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 14px; background: var(--paper); }
+.k-poll .lu-ic { background: #C8FF00; } .k-survey .lu-ic { background: #FFE500; } .k-notice .lu-ic { background: #FFD6E5; } .k-file .lu-ic { background: #DCE7FF; }
+.lu-go { flex: none; padding: 6px 12px; border-radius: 99px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 650; }
+.notice-list { display: grid; gap: 8px; }
+.notice-list li { display: grid; gap: 8px; padding: 14px 16px; }
+.k-feedback .lu-ic { background: #E7DFFF; } .k-alert .lu-ic { background: #DCFCE7; } .live-card .tag { display: inline-flex; align-items: center; gap: 6px; }
+/* Explore with the menu bar: room for it under the cards on phones; the header already has Back on desktop. */
+@media (max-width: 959px) { .explore .reel { padding-bottom: calc(116px + env(safe-area-inset-bottom)); } .explore .reel-hint { bottom: calc(88px + env(safe-area-inset-bottom)); } }
+@media (min-width: 960px) { .explore .global-nav { display: none; } }
