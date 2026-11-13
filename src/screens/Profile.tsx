@@ -7,9 +7,9 @@ import { useEffect, useState } from 'react';
 import { deleteMyAccount } from '../lib/account';
 import { friendlyError } from '../lib/format';
 import { AccountMenu } from '../components/AccountMenu';
-import { ProfileDetails, ProfileHero } from '../components/ProfileCard';
-import { CountUp, PeopleStack, Reveal } from '../components/Fun';
-import { DemoBanner, ErrorNote, GlobalNav, Icon, LoadError, Logo, Modal, Spinner, useToast } from '../components/ui';
+import { ProfileDetails } from '../components/ProfileCard';
+import { BadgeCheck, Bookmark, CalendarDays, ChevronRight, Globe, Inbox, Lock, MapPin, Mic, Pencil, Share2, Users } from 'lucide-react';
+import { Avatar, DemoBanner, ErrorNote, GlobalNav, LoadError, Logo, Modal, Spinner, useToast } from '../components/ui';
 import type { AppUser } from '../lib/types';
 import { useAuth } from '../lib/auth';
 import { useCol, useDoc } from '../lib/live';
@@ -17,7 +17,6 @@ import { useMode } from '../lib/mode';
 import { completion, ensureProfile, type PublicProfile } from '../lib/profile';
 import { ensureUsername } from '../lib/username';
 import type { CertificateDoc } from '../lib/types';
-import { SavedList } from './Saved';
 import { useSwipes } from '../lib/saved';
 import { usePings } from '../components/MyPeople';
 import { RoleToggle } from '../components/RoleToggle';
@@ -54,90 +53,70 @@ export function Profile() {
     } catch { /* closed the share sheet */ }
   };
 
-  const activity = { events: mine.data.length, saved, people: pings.people, certificates: certs.data.length, profile: done?.percent ?? 0 };
-  const friends = pings.connections.map((x) => (x.fromUid === user.uid
-    ? { uid: x.toUid, name: x.toName, photo: x.toPhoto || undefined, sub: x.eventTitle }
-    : { uid: x.fromUid, name: x.fromName, photo: x.fromPhoto || undefined, sub: x.eventTitle }))
-    .filter((f, i, all) => all.findIndex((g) => g.uid === f.uid) === i);
-  const tiles = [
-    { label: 'Events joined', n: activity.events, emoji: '🎟️', tone: 'lime', href: '/' },
-    { label: 'Saved events', n: saved, emoji: '🔖', tone: 'pink', href: '#saved' },
-    { label: 'Connected people', n: pings.people, emoji: '🤝', tone: 'violet', href: '/people' },
-    { label: 'Pending requests', n: pings.incoming.length, emoji: '📬', tone: 'sun', href: '/people?tab=incoming' },
+  const stats = [
+    { label: 'Events', n: mine.data.length, href: '/', icon: CalendarDays },
+    { label: 'Saved', n: saved, href: '/saved', icon: Bookmark },
+    { label: 'Connections', n: pings.people, href: '/people', icon: Users },
+    { label: 'Requests', n: pings.incoming.length, href: '/people?tab=incoming', icon: Inbox },
   ];
+  const line = p ? [p.designation, p.organisation].filter(Boolean).join(' · ') : '';
 
   return (
     <div className="dash">
       <DemoBanner />
       <header className="top"><Logo /><AccountMenu photo={p?.photo} /></header>
-      <main className="dash-main fun">
+      <main className="dash-main prof">
         {prof.error ? <LoadError /> : !p ? <Spinner label="Setting up your profile" /> : (
-          <ProfileHero p={p}>
-            <div className="ph-actions">
-              <Link className="btn btn-ink" href="/profile/edit">Edit profile</Link>
-              <button className="btn btn-outline" onClick={share}><Icon name="external" size={16} /> Share</button>
+          <section className="prof-id" aria-label="Your profile">
+            <Avatar id={user.uid} name={p.name} photo={p.photo || undefined} size={88} />
+            <div className="prof-who">
+              <h1>{p.name}</h1>
+              {p.username && <p className="prof-handle">@{p.username}</p>}
+              {p.headline && <p className="prof-headline">{p.headline}</p>}
+              {line && <p className="muted">{line}</p>}
+              {p.location && <p className="muted prof-meta"><MapPin size={14} aria-hidden="true" /> {p.location}</p>}
             </div>
-            <p className="ph-vis"><span className="ph-id">ID · {p.profileId}</span> {p.visibility === 'public' ? 'Visible to people signed in to Gather. Email and phone stay private.' : 'Hidden: only you can see this profile.'}</p>
-          </ProfileHero>
+            <div className="prof-actions">
+              <Link className="btn btn-ink btn-sm" href="/profile/edit"><Pencil size={15} /> Edit profile</Link>
+              <button className="btn btn-ghost btn-sm" onClick={share}><Share2 size={15} /> Share</button>
+            </div>
+            <p className="prof-vis muted">
+              {p.visibility === 'public' ? <Globe size={13} aria-hidden="true" /> : <Lock size={13} aria-hidden="true" />}
+              {p.visibility === 'public' ? ' Visible to people on Gather. Email and phone stay private.' : ' Hidden: only you can see this profile.'}
+              <span className="prof-id-code">ID {p.profileId}</span>
+            </p>
+          </section>
         )}
 
         {done && done.percent < 100 && (
-          <Reveal as={Link} href="/profile/edit" className="pnudge">
-            <span className="pnudge-emoji" aria-hidden="true">🚀</span>
-            <span className="grow">
-              <b>Your profile is {done.percent}% done</b>
-              <small>Add {done.missing.slice(0, 3).join(', ').toLowerCase()}{done.missing.length > 3 ? ' and more' : ''}</small>
-              <span className="pbar"><i style={{ width: `${done.percent}%` }} /></span>
-            </span>
-            <Icon name="arrow" size={18} />
-          </Reveal>
+          <Link href="/profile/edit" className="prof-complete">
+            <div className="row-between"><b>Profile {done.percent}% complete</b><span className="muted small">Add {done.missing.slice(0, 2).join(', ').toLowerCase()}{done.missing.length > 2 ? '…' : ''}</span></div>
+            <span className="prof-bar"><i style={{ width: `${done.percent}%` }} /></span>
+          </Link>
         )}
 
-        <div className="sbento">
-          {tiles.map((t, i) => (
-            <Reveal key={t.label} as={Link} href={t.href} delay={i * 70} className={`sbento-tile t-${t.tone}`}>
-              <span className="sbento-emoji" aria-hidden="true">{t.emoji}</span>
-              <b className="sbento-n">{pings.loading && i > 1 ? '…' : <CountUp value={t.n} />}</b>
-              <span className="sbento-label">{t.label}</span>
-            </Reveal>
+        <dl className="prof-stats">
+          {stats.map((st) => (
+            <Link key={st.label} href={st.href}>
+              <st.icon size={18} aria-hidden="true" />
+              <dd>{pings.loading && (st.label === 'Connections' || st.label === 'Requests') ? '…' : st.n}</dd>
+              <dt>{st.label}</dt>
+            </Link>
           ))}
-        </div>
+        </dl>
 
-        <Reveal as="section" className="people-peek">
-          <div className="row-between">
-            <div><small>My people</small><h2>{pings.people ? `${pings.people} ${pings.people === 1 ? 'connection' : 'connections'}` : 'No connections yet'}</h2></div>
-            <Link className="btn btn-white btn-sm" href="/people">See all <Icon name="arrow" size={16} /></Link>
-          </div>
-          {friends.length ? <PeopleStack people={friends} /> : <p className="people-peek-empty">Open an event, go to People and send a Meet Ping. 👋</p>}
-          {pings.incoming.length > 0 && <Link href="/people?tab=incoming" className="people-peek-req"><span aria-hidden="true">📬</span>{pings.incoming.length} {pings.incoming.length === 1 ? 'request is' : 'requests are'} waiting for you</Link>}
-        </Reveal>
+        <nav className="prof-list" aria-label="Your Gather">
+          <Link href="/people"><Users size={19} aria-hidden="true" /><span className="grow"><b>My people</b><small>Connections and Meet Ping requests</small></span>{pings.incoming.length > 0 && <span className="count-badge">{pings.incoming.length}</span>}<ChevronRight size={18} aria-hidden="true" /></Link>
+          <Link href="/saved"><Bookmark size={19} aria-hidden="true" /><span className="grow"><b>Saved events</b><small>{saved ? `${saved} saved` : 'Events you saved in Explore'}</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
+          <Link href="/speaker"><Mic size={19} aria-hidden="true" /><span className="grow"><b>Speaker area</b><small>Enter your event’s speaker code, see feedback, run Pulse</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
+          {certs.data.map((c) => (
+            <Link key={c.id} href={`/verify/${c.id}`}><BadgeCheck size={19} aria-hidden="true" /><span className="grow"><b>{c.eventTitle}</b><small>Certificate · {c.title}</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
+          ))}
+        </nav>
+
+        {canOrganise && <section className="prof-mode"><RoleToggle /></section>}
 
         {p && <ProfileDetails p={p} />}
-
-        {canOrganise && <section className="card mode-card-toggle"><RoleToggle /></section>}
-
-        <Link href="/speaker" className="mode-card card speaker-entry">
-          <div className="grow"><b className="with-emoji"><span aria-hidden="true">🎤</span> I’m a speaker</b><small>Turn it on with your event’s speaker code. Same account, no separate login. See feedback on your talks and run Pulse sessions.</small></div>
-          <Icon name="arrow" size={20} />
-        </Link>
-
-        {certs.data.length > 0 && <>
-          <h2>My certificates</h2>
-          <ul className="saved-list">
-            {certs.data.map((c) => (
-              <li key={c.id} className="saved-row">
-                <Link href={`/e/${c.eventId}/assets`} className="saved-info">
-                  <span className="cert-icon"><Icon name="verified" size={22} /></span>
-                  <span><b>{c.eventTitle}</b><small>{c.title} · {c.dates}</small></span>
-                </Link>
-                <Link className="btn btn-ghost btn-sm" href={`/verify/${c.id}`}>Verify</Link>
-              </li>
-            ))}
-          </ul>
-        </>}
-
-        <h2 id="saved">Saved events</h2>
-        <SavedList user={user} />
 
         <DeleteAccount user={user} />
       </main>
@@ -158,12 +137,9 @@ function DeleteAccount({ user }: { user: AppUser }) {
     catch (x) { setErr(/popup|cancel/i.test(String(x)) ? 'Google sign-in was closed, so the account wasn’t deleted. Your profile data was removed; try again to finish.' : friendlyError(x)); setStep(''); }
   }
   return (
-    <section className="danger-zone card">
-      <div>
-        <b>Delete my profile and account</b>
-        <small>Removes your profile, your saved events and your Pulse activities, and closes your Gather account.</small>
-      </div>
-      <button className="btn btn-ghost btn-sm danger" onClick={() => setOpen(true)}>Delete account</button>
+    <section className="prof-danger">
+      <div><b>Delete account</b><small>Removes your profile, saved events and Pulse activities, and closes your Gather account.</small></div>
+      <button className="btn btn-ghost btn-sm danger" onClick={() => setOpen(true)}>Delete</button>
       {open && (
         <Modal title="Delete your account?" onClose={() => { if (!step) setOpen(false); }}>
           <div className="stack">
