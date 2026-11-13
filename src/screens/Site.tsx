@@ -44,9 +44,11 @@ function WordWheel() {
 
 /* ---------- Upcoming events, readable without signing in (published events only) ---------- */
 
-function useUpcoming(max = 8) {
+function useUpcoming(max = 8, defer = false) {
   const [s, set] = useState<{ data: EventDoc[]; loading: boolean }>({ data: [], loading: true });
   useEffect(() => {
+    // A returning signed-in visitor is about to see their own Home: skip reading the events.
+    if (defer && document.documentElement.hasAttribute('data-auth')) return;
     let live = true;
     backend.getCol<EventDoc>('events', [['published', true]], { limit: 60 })
       .then((all) => {
@@ -58,7 +60,7 @@ function useUpcoming(max = 8) {
       })
       .catch(() => { if (live) set({ data: [], loading: false }); });
     return () => { live = false; };
-  }, [max]);
+  }, [max, defer]);
   return s;
 }
 
@@ -216,8 +218,8 @@ function Showcase({ events, loading }: { events: EventDoc[]; loading: boolean })
   );
 }
 
-export function Site() {
-  const upcoming = useUpcoming();
+export function Site({ deferData = false }: { deferData?: boolean }) {
+  const upcoming = useUpcoming(8, deferData);
   const n = upcoming.data.length;
   return (
     <div className="site">

@@ -15,13 +15,15 @@ import { Site } from './Site';
 
 export function Home() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="center"><Spinner /></div>;
+  // While sign-in is starting, the website is already on screen for visitors (it is in the page's HTML).
+  // Someone signed in last time gets a loader instead (CSS, from a hint set before the first paint).
+  if (loading) return <><div className="center boot-spin"><Spinner /></div><Site deferData /></>;
   return user ? <MyEvents /> : <Site />;
 }
 
 /** Shown once per sign-in session, for a moment, before My events. */
 function WelcomeSplash({ name, onDone }: { name: string; onDone: () => void }) {
-  useEffect(() => { const t = setTimeout(onDone, 1300); return () => clearTimeout(t); }, [onDone]);
+  useEffect(() => { const t = setTimeout(onDone, 650); return () => clearTimeout(t); }, [onDone]);
   return (
     <div className="splash bleed-lime" role="status">
       <h1>Welcome,<br />{name}</h1>

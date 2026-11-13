@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { DemoBanner, ErrorNote, Icon, Logo } from '../components/ui';
 import { useAuth } from '../lib/auth';
@@ -16,9 +16,6 @@ const COPY = {
 
 export function Login({ role }: { role: keyof typeof COPY }) {
   const c = COPY[role];
-  const params = useSearchParams();
-  const raw = params.get('next') ?? c.home;
-  const next = raw.startsWith('/') && !raw.startsWith('//') ? raw : c.home; // stay inside the app
   const nav = useRouter();
   const { user } = useAuth();
   const [err, setErr] = useState('');
@@ -27,9 +24,12 @@ export function Login({ role }: { role: keyof typeof COPY }) {
   const { setMode } = useMode();
   useEffect(() => {
     if (!user) return;
+    // Read ?next= only when it's needed, so the page itself can be pre-rendered and appear at once.
+    const raw = new URLSearchParams(window.location.search).get('next') ?? c.home;
+    const next = raw.startsWith('/') && !raw.startsWith('//') ? raw : c.home; // stay inside the app
     setMode(role); // remembered, so a reload keeps the same experience
     nav.replace(next);
-  }, [user, next, nav, role, setMode]);
+  }, [user, nav, role, setMode, c.home]);
 
   async function go() {
     setErr(''); setBusy(true);

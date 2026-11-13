@@ -15,6 +15,20 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#FFFFFF' };
 
+/** Runs before the first paint: a visitor who was signed in last time sees a loader, not the website. */
+const HINT = `try{if(localStorage.getItem('gather-signed-in'))document.documentElement.setAttribute('data-auth','')}catch(e){}`;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return <html lang="en"><body><Providers>{children}</Providers></body></html>;
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Open the connections sign-in and data use while the app is still downloading. */}
+        <link rel="preconnect" href="https://firestore.googleapis.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://securetoken.googleapis.com" crossOrigin="anonymous" />
+        <script dangerouslySetInnerHTML={{ __html: HINT }} />
+      </head>
+      <body><Providers>{children}</Providers></body>
+    </html>
+  );
 }

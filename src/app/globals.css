@@ -1902,3 +1902,8 @@ button.pl-present-qr small { font-size: 11px; opacity: .7; }
 @media (max-width: 759px) {
   .site-hero + .hx { padding-top: 36px; }
 }
+
+/* First paint: visitors see the website at once; a returning signed-in person sees a loader until sign-in is ready */
+.boot-spin { display: none; }
+html[data-auth] .boot-spin { display: grid; }
+html[data-auth] .boot-spin ~ .site { display: none; }
