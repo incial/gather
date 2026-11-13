@@ -107,6 +107,8 @@ export interface SessionDoc {
   kind: SessionKind;
   /** Organisers choose per session. Missing means on. */
   feedbackOn: boolean;
+  /** The organiser lets attendees mark themselves present (for when scanning fails or people arrive late). Off by default. */
+  selfCheckIn?: boolean;
 }
 
 export type SessionKind = 'talk' | 'workshop' | 'activity' | 'panel' | 'break';
@@ -229,7 +231,8 @@ export interface AttendanceDoc {
   sessionId: string;
   name: string;
   email: string;
-  method: 'qr' | 'staff' | 'manual';
+  /** qr: scanned or typed the room code · staff: pass scanned · manual: ticked by an organiser · self: marked themselves (when the organiser allowed it) */
+  method: 'qr' | 'staff' | 'manual' | 'self';
   key?: string;
   at?: string;
 }

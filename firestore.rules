@@ -437,6 +437,15 @@ service cloud.firestore {
           && request.resource.data.method == 'qr'
           && request.resource.data.at == request.time
           && keyIsLive()
+        ) || (
+          // Self check-in: only for a session where the organiser switched it on, only for yourself, recorded as 'self'.
+          isAttendee(e)
+          && request.resource.data.uid == request.auth.uid
+          && id == request.resource.data.sessionId + '_' + request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'sessionId', 'name', 'email', 'method', 'at'])
+          && request.resource.data.method == 'self'
+          && request.resource.data.at == request.time
+          && get(/databases/$(database)/documents/events/$(e)/sessions/$(request.resource.data.sessionId)).data.get('selfCheckIn', false) == true
         );
         allow update, delete: if ownsEvent(e);
       }

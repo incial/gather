@@ -40,7 +40,7 @@ export function attendeesSheet(d: EventData): Sheet {
 /** One row per check-in. */
 export function attendanceLogSheet(d: EventData): Sheet {
   const titles = new Map(d.sessions.map((s) => [s.id, s.title]));
-  const how = { qr: 'Scanned session QR', staff: 'Pass scanned by staff', manual: 'Marked by organiser' };
+  const how = { qr: 'Session code (scanned or typed)', staff: 'Pass scanned by staff', manual: 'Marked by organiser', self: 'Self-marked (allowed by organiser)' };
   const rows = [...d.attendance].sort((a, b) => (a.at ?? '').localeCompare(b.at ?? '')).map((a) => ({
     Session: titles.get(a.sessionId) ?? a.sessionId, Name: a.name, Email: a.email, 'Checked in at': fmtDateTime(a.at), Method: how[a.method],
   }));

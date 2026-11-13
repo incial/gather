@@ -213,3 +213,12 @@ Changes:
 Note: like `ownerEmail`, `teamEmails` is readable by anyone who can read a public event.
 
 Tests: `rules-tests/team.rules.test.ts` (8 tests); full suite 190/190 passing.
+
+## Session overview and self check-in — 13 Nov 2026
+
+**New optional field** on `events/{id}/sessions/{sid}`: `selfCheckIn: boolean` (organisers only; off when missing).
+**New attendance method** `'self'` on `events/{id}/attendance/{sid}_{uid}`.
+
+**Rules change** (`attendance` create): a third way in, besides organisers and the live room code — a registered attendee may create their own record with `method == 'self'` (fields `uid, sessionId, name, email, method, at` only, `at == request.time`) **only if** that session's `selfCheckIn == true`. Door check-in from a session check-in keeps working unchanged (it only needs the matching attendance record written in the same batch).
+
+No existing data changes. Tests: `rules-tests/selfcheckin.rules.test.ts` (5); full suite 195/195.

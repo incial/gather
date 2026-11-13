@@ -105,13 +105,17 @@ export const updateProfileFor = (eventId: string, a: AttendeeDoc, profile: Profi
 
 export type CheckInResult = 'ok' | 'already' | 'expired';
 
-export async function checkIn(eventId: string, sessionId: string, me: AttendeeDoc, key: string): Promise<CheckInResult> {
+/**
+ * Session check-in by the attendee: with the room code (scanned or typed), or, when the organiser has switched on
+ * self check-in for that session, by marking themselves present (no code; recorded as "self").
+ */
+export async function checkIn(eventId: string, sessionId: string, me: AttendeeDoc, key: string | null): Promise<CheckInResult> {
   const id = `${sessionId}_${me.uid}`;
   const path = `events/${eventId}/attendance/${id}`;
   if (await backend.getDoc(path)) return 'already';
-  const session: WriteOp = { type: 'set', path, data: {
-    uid: me.uid, sessionId, name: me.name, email: me.email, method: 'qr', key: key.trim().toUpperCase(), at: backend.now(),
-  } };
+  const session: WriteOp = { type: 'set', path, data: key === null
+    ? { uid: me.uid, sessionId, name: me.name, email: me.email, method: 'self', at: backend.now() }
+    : { uid: me.uid, sessionId, name: me.name, email: me.email, method: 'qr', key: key.trim().toUpperCase(), at: backend.now() } };
   // The first scan of the event also marks you present at the event (same record your pass and the organiser use).
   const fresh = await backend.getDoc<AttendeeDoc>(`events/${eventId}/attendees/${me.uid}`).catch(() => null);
   const present: WriteOp[] = fresh && !fresh.checkedIn ? [
@@ -129,6 +133,10 @@ export async function checkIn(eventId: string, sessionId: string, me: AttendeeDo
     catch (e2) { if ((e2 as { code?: string }).code === 'permission-denied') return 'expired'; throw e2; }
   }
 }
+
+/** Opens or closes self check-in for one session (organisers). */
+export const setSelfCheckIn = (eventId: string, sessionId: string, on: boolean) =>
+  backend.write([{ type: 'set', path: `events/${eventId}/sessions/${sessionId}`, merge: true, data: { selfCheckIn: on } }]);
 
 export const markAttendance = (eventId: string, sessionId: string, a: Pick<AttendeeDoc, 'uid' | 'name' | 'email'>, method: 'staff' | 'manual') =>
   backend.write([{ type: 'set', path: `events/${eventId}/attendance/${sessionId}_${a.uid}`, data: {

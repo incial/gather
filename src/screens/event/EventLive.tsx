@@ -1,6 +1,6 @@
 'use client';
 
-import { BellRing, CalendarClock, ClipboardList, FileText, Handshake, Megaphone, MessageSquareText, Radio } from 'lucide-react';
+import { BellRing, CalendarClock, ClipboardList, FileText, Hand, Handshake, Megaphone, MessageSquareText, Radio } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAnnounce, useEventFeed, type Item } from '../../components/LiveUpdates';
@@ -10,11 +10,11 @@ import { useCol } from '../../lib/live';
 import type { NotificationDoc } from '../../lib/meetping';
 import { useEventCtx } from './context';
 
-type FeedItem = Omit<Item, 'kind'> & { kind: Item['kind'] | 'now' | 'next' };
+type FeedItem = Omit<Item, 'kind'> & { kind: Item['kind'] | 'now' | 'next' | 'checkin' };
 
-const ICON = { poll: Radio, survey: ClipboardList, notice: Megaphone, file: FileText, feedback: MessageSquareText, alert: Handshake, now: Radio, next: CalendarClock };
-const GO: Record<FeedItem['kind'], string> = { poll: 'Join', survey: 'Answer', notice: 'View', file: 'Open', feedback: 'Give feedback', alert: 'View', now: 'Schedule', next: 'Schedule' };
-const ORDER: Record<FeedItem['kind'], number> = { now: 0, poll: 1, survey: 1, alert: 2, feedback: 2, notice: 3, file: 3, next: 4 };
+const ICON = { poll: Radio, survey: ClipboardList, notice: Megaphone, file: FileText, feedback: MessageSquareText, alert: Handshake, now: Radio, next: CalendarClock, checkin: Hand };
+const GO: Record<FeedItem['kind'], string> = { poll: 'Join', survey: 'Answer', notice: 'View', file: 'Open', feedback: 'Give feedback', alert: 'View', now: 'Schedule', next: 'Schedule', checkin: 'Check in' };
+const ORDER: Record<FeedItem['kind'], number> = { checkin: 0, now: 0, poll: 1, survey: 1, alert: 2, feedback: 2, notice: 3, file: 3, next: 4 };
 
 function useMinute() {
   const [now, setNow] = useState(() => Date.now());
@@ -28,7 +28,7 @@ function useMinute() {
  * `limit` shows a short preview (event home) with a link to the full feed.
  */
 export function EventLiveFeed({ limit }: { limit?: number }) {
-  const { event, me, sessions } = useEventCtx();
+  const { event, me, sessions, attendance } = useEventCtx();
   const now = useMinute();
   // The whole event counts as news here (Home only shows the last 48 hours).
   const { items, ready } = useEventFeed(event, me.uid, 45 * 86_400_000);
@@ -41,7 +41,12 @@ export function EventLiveFeed({ limit }: { limit?: number }) {
   const all = useMemo(() => {
     const onNow = sessions.filter((s) => Date.parse(s.startsAt) <= now && Date.parse(s.endsAt) >= now);
     const next = sessions.find((s) => Date.parse(s.startsAt) > now);
-    const sched: FeedItem[] = [
+    const attended = new Set(attendance.map((a) => a.sessionId));
+    // The organiser opened self check-in for a session that's on, and you haven't checked in yet.
+    const selfOpen: FeedItem[] = onNow.filter((s) => s.selfCheckIn && !attended.has(s.id)).map((s) => ({
+      key: `c-${s.id}`, kind: 'checkin', title: `Check in to ${s.title}`, sub: 'Mark yourself present', href: `/e/${event.id}/scan?session=${s.id}#cant-scan`, at: s.startsAt, eventTitle: '',
+    }));
+    const sched: FeedItem[] = [...selfOpen,
       ...onNow.map((s): FeedItem => ({ key: `s-${s.id}`, kind: 'now', title: s.title, sub: `Happening now${s.room ? ` · ${s.room}` : ''}`, href: `/e/${event.id}/schedule`, at: s.startsAt, eventTitle: `until ${fmtTime(s.endsAt)}` })),
       ...(next ? [{ key: `n-${next.id}`, kind: 'next' as const, title: next.title, sub: `Up next${next.room ? ` · ${next.room}` : ''}`, href: `/e/${event.id}/schedule`, at: next.startsAt, eventTitle: fmtTime(next.startsAt) }] : []),
     ];
@@ -51,7 +56,7 @@ export function EventLiveFeed({ limit }: { limit?: number }) {
     }));
     const rest: FeedItem[] = items.map((i) => ({ ...i, eventTitle: i.kind === 'notice' || i.kind === 'file' ? fmtDateTime(i.at) : '' }));
     return [...sched, ...pings, ...rest].sort((a, b) => (ORDER[a.kind] - ORDER[b.kind]) || (b.at ?? '').localeCompare(a.at ?? ''));
-  }, [sessions, now, unread.data, items, event.id]);
+  }, [sessions, now, unread.data, items, event.id, attendance]);
 
   // Pop up polls, notices and files that arrive while the page is open.
   useEffect(() => {

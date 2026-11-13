@@ -3,7 +3,10 @@
 import { useMemo, useRef, useState } from 'react';
 import { Scanner } from '../../components/Scanner';
 import { CsvButton, Empty, Modal, useToast } from '../../components/ui';
-import { markAttendance, unmarkAttendance } from '../../lib/api';
+import { markAttendance, setSelfCheckIn, unmarkAttendance } from '../../lib/api';
+import { useCount } from '../../lib/live';
+import type { SessionDoc } from '../../lib/types';
+import { useEffect } from 'react';
 import { attendanceLogSheet, attendanceRegisterSheet } from '../../lib/exports';
 import { friendlyError } from '../../lib/format';
 import { readPass } from '../../lib/qr';
@@ -32,7 +35,26 @@ function CheckInHistory({ eventId }: { eventId: string }) {
     </details>
   );
 }
-import { BadgeCheck, CircleAlert, CircleX, ScanLine, Search } from 'lucide-react';
+import { BadgeCheck, CircleAlert, CircleX, Hand, RefreshCw, ScanLine, Search } from 'lucide-react';
+
+/** One session in the overview: how many attended (a count, so 1 read), and whether self check-in is open. */
+function SessionTile({ eventId, s, total, active, onOpen, tick }: { eventId: string; s: SessionDoc; total: number; active: boolean; onOpen: () => void; tick: number }) {
+  const c = useCount(`events/${eventId}/attendance`, [['sessionId', s.id]]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (tick) c.refresh(); }, [tick]);
+  const n = c.n ?? 0;
+  const pct = total ? Math.round((n / total) * 100) : 0;
+  const now = Date.now();
+  const live = Date.parse(s.startsAt) <= now && Date.parse(s.endsAt) >= now;
+  return (
+    <button type="button" className={`sess-tile${active ? ' on' : ''}`} onClick={onOpen} aria-pressed={active}>
+      <span className="sess-tile-top"><small>{fmtTime(s.startsAt)}{live && <i className="pill pill-live">Now</i>}</small>{s.selfCheckIn && <i className="sess-self" title="Self check-in is open"><Hand size={13} aria-hidden="true" /> Self</i>}</span>
+      <b>{s.title}</b>
+      <span className="sess-tile-n"><b>{c.n === null ? '…' : n}</b> / {total} <small>{pct}%</small></span>
+      <span className="sess-bar"><i style={{ width: `${pct}%` }} /></span>
+    </button>
+  );
+}
 import { loadEventData, useAdmin, useAdminCol } from './context';
 
 export function Attendance() {
@@ -48,6 +70,16 @@ export function Attendance() {
   const attendance = useAdminCol('attendance', sessionId ? [['sessionId', sessionId]] : [['sessionId', '-']]).data;
   const present = new Map(attendance.map((a) => [a.uid, a]));
   const lastScan = useRef('');
+  const session = sorted.find((s) => s.id === sessionId);
+  // Session counts refresh every 30 seconds, and straight away when this session's list changes.
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 30_000); return () => clearInterval(t); }, []);
+  useEffect(() => { setTick((n) => n + 1); }, [attendance.length]);
+  async function toggleSelf(on: boolean) {
+    if (!session) return;
+    try { await setSelfCheckIn(event.id, session.id, on); toast(on ? `Attendees can now mark themselves present for “${session.title}”` : 'Self check-in closed'); }
+    catch (x) { toast(friendlyError(x), 'err'); }
+  }
 
   async function toggle(uid: string, on: boolean) {
     const a = attendees.find((x) => x.uid === uid)!;
@@ -76,6 +108,11 @@ export function Attendance() {
         </div>
       </div>
       {!sorted.length ? <Empty title="Add sessions first">Attendance is taken per session.</Empty> : <>
+        {/* Every session at a glance; tap one to see and edit its list below */}
+        <div className="row-between"><h3 className="sub-h">All sessions</h3><button className="btn btn-ghost btn-sm" onClick={() => setTick((n) => n + 1)}><RefreshCw size={14} /> Refresh</button></div>
+        <div className="sess-grid">
+          {sorted.map((s) => <SessionTile key={s.id} eventId={event.id} s={s} total={attendees.length} active={s.id === sessionId} onOpen={() => setPicked(s.id)} tick={tick} />)}
+        </div>
         <div className="row-between">
           <select aria-label="Session" className="grow" value={sessionId} onChange={(e) => setPicked(e.target.value)}>
             {sorted.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
@@ -83,12 +120,18 @@ export function Attendance() {
           <button className="btn btn-primary btn-sm" onClick={() => setScanning(true)}>Scan passes</button>
         </div>
         <p className="big-count"><b>{present.size}</b> of {attendees.length} checked in</p>
+        {session && (
+          <label className="check self-toggle">
+            <input type="checkbox" checked={!!session.selfCheckIn} onChange={(e) => toggleSelf(e.target.checked)} />
+            <span><b>Let attendees mark themselves present</b><small>For when scanning doesn’t work or people arrive late. They tap “Mark me present” in the app; it shows as “Self-marked” here and in the register. Turn it off when the session is over.</small></span>
+          </label>
+        )}
         <div className="table-list">
           {attendees.map((a) => (
             <label key={a.uid} className="list-row check-row">
               <input type="checkbox" checked={present.has(a.uid)} onChange={(e) => toggle(a.uid, e.target.checked)} />
               <div className="grow"><b>{a.name}</b><small>{a.institution || a.email}</small></div>
-              {present.has(a.uid) && <small className="muted">{{ qr: 'Self scan', staff: 'Pass scan', manual: 'Manual' }[present.get(a.uid)!.method]}</small>}
+              {present.has(a.uid) && <small className={`muted${present.get(a.uid)!.method === 'self' ? ' self-tag' : ''}`}>{{ qr: 'Room code', staff: 'Pass scan', manual: 'Manual', self: 'Self-marked' }[present.get(a.uid)!.method]}</small>}
             </label>
           ))}
         </div>
