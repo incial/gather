@@ -43,19 +43,12 @@ export function JoinEvent() {
       <DemoBanner />
       <header className="top"><Logo /><AccountMenu /></header>
       <main className="dash-main narrow-main">
-        <h1 className="hello">Join an event</h1>
-        <section className="tile tile-blue join-tile">
-          <h2>Enter the event number</h2>
-          <p>The organiser shares a 6-digit number.</p>
-          <form className="code-form" onSubmit={go}>
-            <label className="sr" htmlFor="join-code">6-digit event number</label>
-            <input id="join-code" className="code-input" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" inputMode="numeric" autoComplete="off" autoFocus />
-            <button className="btn btn-white" disabled={busy || code.length !== 6}>{busy ? '…' : 'Join'}</button>
-          </form>
-        </section>
-        <div className="or-line"><span>or</span></div>
+        <div className="join-head">
+          <h1 className="hello">Join an event</h1>
+          <p className="muted">Two ways, same result: scan the event’s QR code, or type its 6-digit number.</p>
+        </div>
         {scanning ? (
-          <section className="stack">
+          <section className="stack join-scan-box">
             <Scanner onResult={onScan} />
             <button className="btn btn-ghost btn-block" onClick={() => setScanning(false)}>Stop scanning</button>
           </section>
@@ -64,6 +57,16 @@ export function JoinEvent() {
             <Icon name="scan" size={22} /> Scan the event QR code
           </button>
         )}
+        <div className="or-line"><span>or type the number</span></div>
+        <section className="tile tile-blue join-tile">
+          <h2>Event number</h2>
+          <p>The organiser shares a 6-digit number.</p>
+          <form className="code-form" onSubmit={go}>
+            <label className="sr" htmlFor="join-code">6-digit event number</label>
+            <input id="join-code" className="code-input" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" inputMode="numeric" autoComplete="off" />
+            <button className="btn btn-white" disabled={busy || code.length !== 6}>{busy ? '…' : 'Join'}</button>
+          </form>
+        </section>
         <ErrorNote text={err} />
         <div className="join-more">
           <Link href="/speaker" className="join-more-card"><span aria-hidden="true">🎤</span><span className="grow"><b>I’m a speaker</b><small>Enter your event’s 4-digit speaker code</small></span><Icon name="arrow" size={18} /></Link>

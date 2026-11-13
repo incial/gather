@@ -96,8 +96,7 @@ function MyEvents() {
         )}
 
         <div className="home-actions">
-          <Link href="/join?scan=1" className="home-action a-blue"><span className="home-action-ic"><Icon name="scan" size={24} /></span><b>Scan event QR</b><small>Join or check in by scanning</small></Link>
-          <Link href="/join" className="home-action a-violet"><span className="home-action-ic"><Icon name="ticket" size={24} /></span><b>Enter event code</b><small>The 6-digit number</small></Link>
+          <Link href="/join" className="home-action a-blue"><span className="home-action-ic"><Icon name="scan" size={24} /></span><b>Join an event</b><small>Scan the event’s QR code or type its 6-digit number</small></Link>
           <Link href="/explore" className="home-action a-lime"><span className="home-action-ic"><Icon name="compass" size={24} /></span><b>Explore events</b><small>Find what’s coming up</small></Link>
         </div>
 
@@ -105,7 +104,7 @@ function MyEvents() {
         {mine.error ? <LoadError /> : mine.loading ? <Spinner /> : mine.data.length === 0 ? (
           <div className="empty">
             <strong>No events yet</strong>
-            <div>Scan the event’s QR code or enter its number, or find one in Explore.</div>
+            <div>Tap Join an event to scan its QR code or type its number, or find one in Explore.</div>
           </div>
         ) : <>
           {next.length > 0 ? <div className="event-grid">{next.map((m) => card(m))}</div> : !live.length && <p className="muted">Nothing coming up right now.</p>}
