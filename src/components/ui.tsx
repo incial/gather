@@ -61,6 +61,8 @@ export function GlobalNav() {
     { href: '/inbox', label: 'Alerts', icon: 'bell', on: pathname.startsWith('/inbox'), badge: n },
     { href: '/profile', label: 'Profile', on: pathname.startsWith('/profile'), avatar: true },
   ];
+  // Visitors who aren't signed in (e.g. browsing Explore from the website) don't get the app's menu bar.
+  if (!user) return null;
   return (
     <nav className="global-nav" aria-label="Main">
       {items.map((i) => (
