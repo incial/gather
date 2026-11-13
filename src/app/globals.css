@@ -1888,3 +1888,17 @@ button.pl-present-qr small { font-size: 11px; opacity: .7; }
   .hx-facts { justify-content: flex-start; gap: 8px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .hx-loading { animation: none; } }
+/* Hero back to the original; the events showcase is its own section under it */
+.site-hero + .hx { margin-top: 0; padding: 44px 20px 30px; background: none; }
+.hero-actions .btn { gap: 8px; }
+.hero-explore { display: inline-flex; align-items: center; gap: 6px; width: fit-content; color: #fff; font-weight: 550; font-size: 15px; opacity: .92; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: rgba(255, 255, 255, .5); }
+.hero-explore:hover { opacity: 1; text-decoration-color: #fff; }
+.hx-head { width: min(1180px, 100%); margin: 0 auto; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px 16px; }
+.hx-head .hx-pill { grid-column: 1 / -1; justify-self: start; }
+.hx-head h2 { margin: 0; font-size: clamp(32px, 6vw, 56px); line-height: 1; letter-spacing: -.045em; }
+.hx-photo { background-size: cover; background-position: center; color: #fff; }
+.hx-photo .hx-tag, .hx-photo .hx-date { color: #fff; background: rgba(255, 255, 255, .18); border-color: rgba(255, 255, 255, .35); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.hx-photo .hx-card-body small { opacity: .92; }
+@media (max-width: 759px) {
+  .site-hero + .hx { padding-top: 36px; }
+}

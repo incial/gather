@@ -9,6 +9,39 @@ import { typeInfo } from '../lib/eventTypes';
 import { fmtDate, fmtTime, hue } from '../lib/format';
 import type { Accent, EventDoc } from '../lib/types';
 
+const WORDS = ['Join', 'Explore', 'Check in', 'Connect', 'Give feedback'];
+
+/** The rolling word list: the centre word is sharp and the rest fade out above and below.
+ * A copy of the first word sits at the end so the loop rolls forward forever instead of rewinding. */
+function WordWheel() {
+  const [i, setI] = useState(0);
+  const [snap, setSnap] = useState(false);
+  useEffect(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const t = setInterval(() => { if (!document.hidden) setI((n) => Math.min(n + 1, WORDS.length)); }, 1900);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (!snap) return;
+    const f = requestAnimationFrame(() => requestAnimationFrame(() => setSnap(false)));
+    return () => cancelAnimationFrame(f);
+  }, [snap]);
+  // After rolling onto the copy (the roll takes 0.6s), jump back to the real first word without animating.
+  useEffect(() => {
+    if (i !== WORDS.length) return;
+    const t = setTimeout(() => { setSnap(true); setI(0); }, 700);
+    return () => clearTimeout(t);
+  }, [i]);
+  const list = [...WORDS, WORDS[0]];
+  return (
+    <div className="wheel" role="img" aria-label={WORDS.join(', ')}>
+      <div className={`wheel-track${snap ? ' snap' : ''}`} style={{ transform: `translateY(${-i * 1.22}em)` }} aria-hidden="true">
+        {list.map((w, n) => <span key={n} className={n === i || (i === WORDS.length && n === 0) ? 'on' : ''}>{w}</span>)}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Upcoming events, readable without signing in (published events only) ---------- */
 
 function useUpcoming(max = 8) {
@@ -66,11 +99,33 @@ function twoLines(title: string, n = 24) {
 
 const colourOf = (e: EventDoc): Accent => e.color ?? hue(e.id);
 
+/** Stock photos (Unsplash) for events that have no banner of their own, by event type. */
+const UNSPLASH = (id: string) => `https://images.unsplash.com/photo-${id}?w=720&q=70&auto=format&fit=crop`;
+const STOCK: Record<string, string[]> = {
+  workshop: ['1522202176988-66273c2fd55f', '1556761175-b413da4baf72'],
+  conference: ['1540575467063-178a50c2df87', '1505373877841-8d25f7d46678'],
+  hackathon: ['1504384308090-c894fdcc538d', '1556761175-b413da4baf72'],
+  seminar: ['1475721027785-f74eccf877e2', '1511578314322-379afb476865'],
+  meetup: ['1515187029135-18ee286d815b', '1531058020387-3be344556be6'],
+  webinar: ['1517245386807-bb43f82c33c4', '1522202176988-66273c2fd55f'],
+  competition: ['1531058020387-3be344556be6', '1504384308090-c894fdcc538d'],
+  other: ['1505373877841-8d25f7d46678', '1540575467063-178a50c2df87', '1511578314322-379afb476865'],
+};
+/** The event's own banner if it has one, otherwise a fitting stock photo (stable per event). */
+function photoOf(e: EventDoc) {
+  if (e.bannerThumb) return e.bannerThumb;
+  const pool = STOCK[e.eventType ?? 'other'] ?? STOCK.other;
+  let h = 0;
+  for (const c of e.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return UNSPLASH(pool[h % pool.length]);
+}
+
 function toCard(e: EventDoc): WarpCard {
   const d = new Date(e.startsAt);
   const type = typeInfo(e.eventType)?.label;
   return {
     ...LOOK[colourOf(e)],
+    image: photoOf(e),
     title: twoLines(e.title),
     value: String(d.getDate()).padStart(2, '0'),
     unit: d.toLocaleString('en-IN', { month: 'short' }),
@@ -106,7 +161,7 @@ function Showcase({ events, loading }: { events: EventDoc[]; loading: boolean })
             {events.map((e) => {
               const type = typeInfo(e.eventType);
               return (
-                <Link key={e.id} href={`/e/${e.id}`} className={`hx-card a-${colourOf(e)}`}>
+                <Link key={e.id} href={`/e/${e.id}`} className={`hx-card hx-photo a-${colourOf(e)}`} style={{ backgroundImage: `linear-gradient(180deg, rgba(0,0,0,.45) 0%, rgba(0,0,0,0) 32%, rgba(0,0,0,0) 45%, rgba(0,0,0,.8) 100%), url("${photoOf(e)}")` }}>
                   <span className="hx-card-top">
                     {type && <span className="hx-tag">{type.label}</span>}
                     <span className="hx-date"><b>{String(new Date(e.startsAt).getDate()).padStart(2, '0')}</b>{new Date(e.startsAt).toLocaleString('en-IN', { month: 'short' })}</span>
@@ -178,20 +233,24 @@ export function Site() {
         <Link href="/login" className="btn btn-ink btn-sm">Log in</Link>
       </header>
 
-      <section className="hx" aria-labelledby="hx-h">
-        <div className="hx-copy">
-          <span className="hx-pill"><i className="live-dot" aria-hidden="true" />{upcoming.loading ? 'Events, made simple' : n ? `${n} event${n === 1 ? '' : 's'} coming up` : 'Events, made simple'}</span>
-          <h1 id="hx-h">Events worth<br />showing up for.</h1>
-          <p>Find an event, join with a six-digit code, and keep your pass, schedule, people and feedback in one place.</p>
-          <div className="hx-actions">
-            <Link href="/explore" className="btn btn-ink">Explore events <Icon name="arrow" size={18} /></Link>
-            <Link href="/login" className="btn btn-white">Log in</Link>
+      <section className="site-hero">
+        <div className="hero-copy">
+          <WordWheel />
+          <h1>Your event,<br />all in one place.</h1>
+          <p>Find events you’ll love, join in seconds, and get everything for the day on your phone.</p>
+          <div className="hero-actions">
+            <Link href="/login" className="btn btn-white"><Icon name="ticket" size={18} /> Attendee login</Link>
+            <Link href="/organiser/login" className="btn btn-glass"><Icon name="calendar" size={18} /> Organiser login</Link>
           </div>
-          <ul className="hx-facts">
-            <li><Icon name="ticket" size={17} /> Join in seconds</li>
-            <li><Icon name="scan" size={17} /> One-scan check-in</li>
-            <li><Icon name="live" size={17} /> Live polls &amp; feedback</li>
-          </ul>
+          <Link href="/explore" className="hero-explore">or explore events without an account <Icon name="arrow" size={16} /></Link>
+        </div>
+      </section>
+
+      <section className="hx" aria-labelledby="hx-h">
+        <div className="hx-head">
+          <span className="hx-pill"><i className="live-dot" aria-hidden="true" />{upcoming.loading ? 'Coming up' : n ? `${n} event${n === 1 ? '' : 's'} coming up` : 'Coming up'}</span>
+          <h2 id="hx-h">Explore events</h2>
+          <Link href="/explore" className="btn btn-ink btn-sm">See all <Icon name="arrow" size={16} /></Link>
         </div>
         <Showcase events={upcoming.data} loading={upcoming.loading} />
       </section>

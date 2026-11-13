@@ -30,6 +30,9 @@ export interface WarpCard {
   accent?: string;
   /** Labels for the detail: slider ends, or the crosshair pill and its two badges. */
   labels?: string[];
+  /** A photo for the card (data URL, or a CORS-enabled URL). Shown edge to edge in place of the mesh, with the
+   * numeral moved to the bottom left so the picture stays visible. Gather addition. */
+  image?: string;
 }
 
 export interface WarpCarouselProps {
@@ -386,29 +389,69 @@ function sizeForCap(ctx: CanvasRenderingContext2D, weight: number, family: strin
   return (cap / asc) * 100;
 }
 
-function paintCard(cv: HTMLCanvasElement, card: WarpCard, family: string) {
+/** Draws a photo to cover the card, then darkens the top and bottom so the copy reads on any picture. */
+function paintPhoto(ctx: CanvasRenderingContext2D, w: number, h: number, img: HTMLImageElement) {
+  const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * s;
+  const dh = img.naturalHeight * s;
+  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  const top = ctx.createLinearGradient(0, 0, 0, h * 0.34);
+  top.addColorStop(0, "rgba(0, 0, 0, 0.55)");
+  top.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = top;
+  ctx.fillRect(0, 0, w, h * 0.34);
+  const bot = ctx.createLinearGradient(0, h * 0.42, 0, h);
+  bot.addColorStop(0, "rgba(0, 0, 0, 0)");
+  bot.addColorStop(1, "rgba(0, 0, 0, 0.78)");
+  ctx.fillStyle = bot;
+  ctx.fillRect(0, h * 0.42, w, h * 0.58);
+}
+
+function paintCard(cv: HTMLCanvasElement, card: WarpCard, family: string, img?: HTMLImageElement | null) {
   const w = cv.width;
   const h = cv.height;
   const ctx = cv.getContext("2d");
   if (!ctx) return;
   const k = w / CW;
+  const photo = !!(img && img.complete && img.naturalWidth);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  paintMesh(ctx, w, h, card.mesh);
+  if (photo) paintPhoto(ctx, w, h, img!);
+  else paintMesh(ctx, w, h, card.mesh);
   ctx.setTransform(k, 0, 0, k, 0, 0);
   ctx.textBaseline = "alphabetic";
   const white: [number, number, number] = [255, 255, 255];
   const accent = parseColor(card.accent || "#ffffff");
 
   // title and footer
-  const small = sizeForCap(ctx, 300, family, 7.9, "H");
-  ctx.font = fontStr(300, small, family);
+  const small = sizeForCap(ctx, photo ? 500 : 300, family, photo ? 8.6 : 7.9, "H");
+  ctx.font = fontStr(photo ? 500 : 300, small, family);
   ctx.fillStyle = rgba(white, 0.9);
   const lines = (card.title || "").split("\n");
   lines.slice(0, 2).forEach((ln, i) => ctx.fillText(ln, 17, 37 + i * 14));
   if (card.footer) {
     ctx.fillStyle = rgba(white, 0.88);
     ctx.fillText(card.footer, 17, 295);
+  }
+
+  if (photo) {
+    // date numeral small at the bottom left, so the picture stays clear
+    const pb = sizeForCap(ctx, 400, family, 30);
+    ctx.save();
+    ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+    ctx.shadowBlur = 8 * k;
+    ctx.font = fontStr(400, pb, family);
+    ctx.fillStyle = rgba(white, 1);
+    const v = card.value || "";
+    ctx.fillText(v, 16, 274);
+    if (card.unit) {
+      const vw0 = ctx.measureText(v).width;
+      ctx.font = fontStr(500, pb * 0.34, family);
+      ctx.fillStyle = rgba(white, 0.9);
+      ctx.fillText(card.unit, 16 + vw0 + 5, 274 - 30 + pb * 0.3);
+    }
+    ctx.restore();
+    return;
   }
 
   // numeral
@@ -1101,12 +1144,13 @@ export function WarpCarousel({
     const glowOverride = glow ? parseColor(glow) : null;
     const glowCols = list.map((c) => (glowOverride ? glowOverride : parseColor(c.glow || "#7fd0f0")));
 
+    const photos = new Map<string, HTMLImageElement>();
     const paintAll = (w: number) => {
       cardCanvases = list.map((card) => {
         const cv = document.createElement("canvas");
         cv.width = w;
         cv.height = Math.round((w * CH) / CW);
-        paintCard(cv, card, font);
+        paintCard(cv, card, font, card.image ? photos.get(card.image) : null);
         return cv;
       });
       texW = w;
@@ -1260,6 +1304,28 @@ export function WarpCarousel({
     }
 
     resize();
+    // photos arrive after the first paint; repaint the cards once they've loaded (batched)
+    let photoTimer = 0;
+    const onPhoto = () => {
+      if (disposed || photoTimer) return;
+      photoTimer = window.setTimeout(() => {
+        photoTimer = 0;
+        if (disposed) return;
+        texW = 0;
+        resize();
+        draw(performance.now() / 1000);
+        kick();
+      }, 60);
+    };
+    for (const c of list) {
+      if (!c.image || photos.has(c.image)) continue;
+      const im = new Image();
+      if (!c.image.startsWith("data:")) im.crossOrigin = "anonymous";
+      im.decoding = "async";
+      im.onload = onPhoto;
+      im.src = c.image;
+      photos.set(c.image, im);
+    }
     const ro = new ResizeObserver(() => {
       resize();
       draw(performance.now() / 1000);
@@ -1319,6 +1385,7 @@ export function WarpCarousel({
     return () => {
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
+      if (photoTimer) clearTimeout(photoTimer);
       ro.disconnect();
       io.disconnect();
       document.removeEventListener("visibilitychange", onVis);
