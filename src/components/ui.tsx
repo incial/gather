@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
 import {
-  ArrowRight, BadgeCheck, Bell, Bookmark, Radio, CalendarDays, Check, ChevronLeft, Clock, Coffee, Compass, Download, ExternalLink, Globe, Hammer,
+  ArrowRight, BadgeCheck, Bell, Bookmark, Radio, Search, CalendarDays, Check, ChevronLeft, Clock, Coffee, Compass, Download, ExternalLink, Globe, Hammer,
   House, Lock, Mail, MapPin, MessageSquareText, Mic, Phone, Plus, ScanLine, ShieldCheck, Sparkles, Star, Ticket, UserRound, Users, Wifi, X,
 } from 'lucide-react';
 import { isDemo } from '../lib/backend';
@@ -29,7 +29,7 @@ const ICONS = {
   back: ChevronLeft, wifi: Wifi, calendar: CalendarDays, ticket: Ticket, shield: ShieldCheck, bookmark: Bookmark,
   compass: Compass, close: X, check: Check, star: Star, download: Download, external: ExternalLink, arrow: ArrowRight,
   lock: Lock, mail: Mail, phone: Phone, globe: Globe, clock: Clock, pin: MapPin, mic: Mic, tool: Hammer,
-  sparkle: Sparkles, coffee: Coffee, verified: BadgeCheck, bell: Bell, live: Radio,
+  sparkle: Sparkles, coffee: Coffee, verified: BadgeCheck, bell: Bell, live: Radio, search: Search,
 };
 export type IconName = keyof typeof ICONS;
 

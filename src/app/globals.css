@@ -1823,3 +1823,17 @@ button.pl-present-qr small { font-size: 11px; opacity: .7; }
 .prof-stats svg, .prof-list a > svg:first-child { color: inherit; }
 .prof-list .prof-ic { width: 38px; height: 38px; border-radius: 12px; }
 .prof-card .prof-cover { justify-self: stretch; align-self: start; }
+/* Swipe feedback in the space the card moves into */
+.reel { position: relative; }
+.swipe-side { position: absolute; z-index: 3; top: 50%; display: grid; justify-items: center; gap: 6px; padding: 16px 14px; border-radius: 22px; font-size: 15px; font-weight: 700; pointer-events: none; opacity: 0; transition: opacity .15s, transform .25s var(--spring); }
+.side-save { right: 14px; background: var(--lime); color: var(--ink); box-shadow: 0 14px 30px -16px rgba(80, 110, 0, .8); }
+.side-skip { left: 14px; background: #fff; color: var(--ink); box-shadow: var(--edge); }
+.reel-card { z-index: 1; }
+/* Explore header: back · title · search + saved; search bar under it */
+.explore-top { display: grid; grid-template-columns: 96px 1fr 96px; }
+.explore-top b { text-align: center; }
+.explore-right { display: flex; gap: 8px; justify-content: flex-end; pointer-events: auto; }
+.explore-search { position: absolute; z-index: 10; left: 50%; transform: translateX(-50%); top: calc(62px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 8px; width: min(488px, calc(100% - 32px)); padding: 0 14px; border-radius: 99px; background: #fff; box-shadow: var(--edge); }
+.explore-search input { border: 0; padding-left: 0; background: transparent; min-height: 46px; }
+.explore-search input:focus { outline: none; }
+.explore:has(.explore-search) .reel { padding-top: calc(118px + env(safe-area-inset-top)); }

@@ -25,10 +25,12 @@ function Reel({ event, onDecide, onJoin, savedIcon, saved, hint }: { event: Even
   const drag = useRef<{ x: number; y: number; id: number; axis: '' | 'x' | 'y' } | null>(null);
   const [dx, setDx] = useState(0);
   const [leaving, setLeaving] = useState(false);
+  const [flash, setFlash] = useState<SwipeDoc['choice'] | null>(null);
 
   function decide(choice: SwipeDoc['choice']) {
     if (leaving || !card.current) return;
     setLeaving(true);
+    setFlash(choice);
     const el = card.current;
     const box = el.getBoundingClientRect();
     el.style.transition = `transform ${FLY_MS}ms cubic-bezier(.5,0,.2,1), opacity ${FLY_MS}ms`;
@@ -70,14 +72,19 @@ function Reel({ event, onDecide, onJoin, savedIcon, saved, hint }: { event: Even
   const dragging = dx !== 0;
   return (
     <section className="reel" data-reel aria-label={event.title}>
+      {/* Shown in the space the card moves into: Saved on the right, Skip on the left. */}
+      <span className="swipe-side side-save" aria-hidden="true" style={{ opacity: flash === 'save' ? 1 : Math.min(1, Math.max(0, dx) / THRESHOLD), transform: `translateY(-50%) scale(${flash === 'save' ? 1.1 : 0.7 + 0.4 * Math.min(1, Math.max(0, dx) / THRESHOLD)})` }}>
+        <Icon name="bookmark" size={26} filled /><b>Saved</b>
+      </span>
+      <span className="swipe-side side-skip" aria-hidden="true" style={{ opacity: flash === 'skip' ? 1 : Math.min(1, Math.max(0, -dx) / THRESHOLD), transform: `translateY(-50%) scale(${flash === 'skip' ? 1.1 : 0.7 + 0.4 * Math.min(1, Math.max(0, -dx) / THRESHOLD)})` }}>
+        <Icon name="close" size={26} /><b>Skip</b>
+      </span>
       <div
         ref={card}
         className={`reel-card a-${event.color}`}
         style={dragging ? { transform: `translateX(${dx}px) rotate(${dx / 22}deg)`, transition: 'none' } : undefined}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       >
-        <span className="stamp-label stamp-save" style={{ opacity: Math.min(1, dx / THRESHOLD) }}>Saved</span>
-        <span className="stamp-label stamp-skip" style={{ opacity: Math.min(1, -dx / THRESHOLD) }}>Skip</span>
         {hint && !dragging && (
           <div className="swipe-hint" aria-hidden="true">
             <span><Icon name="back" size={16} /> Swipe left to skip</span>
@@ -126,6 +133,8 @@ export function Explore() {
   const [pulse, setPulse] = useState(0);
 
   const [type, setType] = useState<EventType | ''>('');
+  const [searching, setSearching] = useState(false);
+  const [q, setQ] = useState('');
   const [loops, setLoops] = useState(0);
 
   // Undiscovered first, then events skipped earlier (without erasing the skip), then round again
@@ -138,12 +147,17 @@ export function Explore() {
   const secondRound = useMemo(() => upcoming.filter((e) => skippedIds.has(e.id) && !joinedIds.has(e.id) && !gone.includes(e.id)), [upcoming, skippedIds, joinedIds, gone]);
   const pool = useMemo(() => upcoming.filter((e) => !joinedIds.has(e.id)), [upcoming, joinedIds]);
   const looped = useMemo(() => pool.filter((e) => !gone.includes(e.id)), [pool, gone]);
-  const reels = fresh.length ? fresh : secondRound.length ? secondRound : looped;
-  const stage = fresh.length ? 'new' : secondRound.length ? 'skipped' : 'loop';
+  // Search: name, place, organiser, type (e.g. "workshop", "Kochi") across everything coming up.
+  const term = q.trim().toLowerCase();
+  const matches = useMemo(() => !term ? [] : pool.filter((e) => [
+    e.title, e.tagline, e.venue, e.organiser, e.description, typeInfo(e.eventType)?.label, ...Object.values(e.typeDetails ?? {}),
+  ].filter(Boolean).join(' ').toLowerCase().includes(term)), [pool, term]);
+  const reels = term ? matches : fresh.length ? fresh : secondRound.length ? secondRound : looped;
+  const stage = term ? 'search' : fresh.length ? 'new' : secondRound.length ? 'skipped' : 'loop';
   // Everything has gone by: start the loop again (only events already loaded, no new reads).
   useEffect(() => {
-    if (!published.loading && !swipes.loading && !reels.length && pool.length) { setGone([]); setLoops((n) => n + 1); }
-  }, [published.loading, swipes.loading, reels.length, pool.length]);
+    if (!term && !published.loading && !swipes.loading && !reels.length && pool.length) { setGone([]); setLoops((n) => n + 1); }
+  }, [term, published.loading, swipes.loading, reels.length, pool.length]);
   // Saved or skipped events that no longer appear may have been deleted: tidy those away, once a session.
   useEffect(() => {
     if (!user || published.loading || swipes.loading) return;
@@ -195,18 +209,32 @@ export function Explore() {
       <header className="explore-top">
         <Link href="/" className="icon-btn" aria-label="Back to home"><Icon name="back" size={20} /></Link>
         <b>Explore</b>
+        <span className="explore-right">
+        <button className="icon-btn explore-search-btn" aria-label={searching ? 'Close search' : 'Search events'} aria-expanded={searching} onClick={() => { setSearching(!searching); if (searching) setQ(''); }}>
+          <Icon name={searching ? 'close' : 'search'} size={20} />
+        </button>
         <Link ref={savedIcon} href="/saved" className="icon-btn saved-icon" aria-label={`Saved events, ${savedCount}`}>
           <span key={pulse} className={pulse ? 'bump' : ''}><Icon name="bookmark" size={20} /></span>
           {savedCount > 0 && <i>{savedCount}</i>}
         </Link>
+        </span>
       </header>
-      {types.length > 0 && (
+      {searching && (
+        <div className="explore-search">
+          <Icon name="search" size={17} />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, place, workshop…" aria-label="Search events" />
+          {q && <button className="link" onClick={() => setQ('')}>Clear</button>}
+        </div>
+      )}
+      {!searching && types.length > 0 && (
         <div className="type-filter" role="tablist" aria-label="Event type">
           <button role="tab" aria-selected={!type} className={!type ? 'on' : ''} onClick={() => { setType(''); setGone([]); }}>All</button>
           {types.map((t) => <button key={t} role="tab" aria-selected={type === t} className={type === t ? 'on' : ''} onClick={() => { setType(t); setGone([]); }}><span aria-hidden="true">{EVENT_TYPES[t].emoji}</span> {EVENT_TYPES[t].label}</button>)}
         </div>
       )}
-      {busy ? <div className="center"><Spinner /></div> : reels.length === 0 ? (
+      {busy ? <div className="center"><Spinner /></div> : term && !reels.length ? (
+        <div className="center"><Empty title="No events match">Try another name, place or type, like “workshop” or “Kochi”.</Empty></div>
+      ) : reels.length === 0 ? (
         <div className="center">
           <Empty title={type ? `No upcoming ${EVENT_TYPES[type].label.toLowerCase()}s` : mine.data.length ? 'You’ve joined everything coming up' : 'No upcoming events yet'}>
             {type ? 'Try another type.' : 'New events will show up here.'}
@@ -221,7 +249,7 @@ export function Explore() {
           <div className="reels" ref={scroller}>
             {reels.map((e, i) => <Reel key={`${loops}-${e.id}`} event={e} onDecide={decide} onJoin={join} savedIcon={savedIcon} saved={swipes.isSaved(e.id)} hint={i === 0 && gone.length === 0 && loops === 0} />)}
           </div>
-          <p className="reel-hint">{stage === 'skipped' ? 'You’ve seen everything new. These are events you skipped earlier. · ' : stage === 'loop' && (loops > 0 || gone.length > 0 || swipes.all.length > 0) ? 'Round again through what’s coming up. · ' : ''}Scroll for more · Right to save · Left to skip</p>
+          <p className="reel-hint">{stage === 'search' ? `${reels.length} ${reels.length === 1 ? 'match' : 'matches'} · ` : stage === 'skipped' ? 'You’ve seen everything new. These are events you skipped earlier. · ' : stage === 'loop' && (loops > 0 || gone.length > 0 || swipes.all.length > 0) ? 'Round again through what’s coming up. · ' : ''}Scroll for more · Right to save · Left to skip</p>
         </>
       )}
       <GlobalNav />
