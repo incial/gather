@@ -17,8 +17,9 @@ export function ProfileCard({ p, children }: { p: PublicProfile; children?: Reac
 export function ProfileHero({ p, children }: { p: PublicProfile; children?: React.ReactNode }) {
   const line = [p.designation, p.organisation].filter(Boolean).join(' · ');
   return (
-    <section className="prof-id" aria-label={`${p.name}’s profile`}>
-      <Avatar id={p.id} name={p.name} photo={p.photo || undefined} size={88} />
+    <section className="prof-id prof-card" aria-label={`${p.name}’s profile`}>
+      <div className="prof-cover" aria-hidden="true"><i /><i /><i /></div>
+      <Avatar id={p.id} name={p.name} photo={p.photo || undefined} size={92} />
       <div className="prof-who">
         <h1>{p.name}</h1>
         {p.username && <p className="prof-handle">@{p.username}</p>}

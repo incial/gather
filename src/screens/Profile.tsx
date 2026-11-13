@@ -54,10 +54,10 @@ export function Profile() {
   };
 
   const stats = [
-    { label: 'Events', n: mine.data.length, href: '/', icon: CalendarDays },
-    { label: 'Saved', n: saved, href: '/saved', icon: Bookmark },
-    { label: 'Connections', n: pings.people, href: '/people', icon: Users },
-    { label: 'Requests', n: pings.incoming.length, href: '/people?tab=incoming', icon: Inbox },
+    { label: 'Events', n: mine.data.length, href: '/', icon: CalendarDays, tone: 'blue' },
+    { label: 'Saved', n: saved, href: '/saved', icon: Bookmark, tone: 'amber' },
+    { label: 'Connections', n: pings.people, href: '/people', icon: Users, tone: 'violet' },
+    { label: 'Requests', n: pings.incoming.length, href: '/people?tab=incoming', icon: Inbox, tone: 'rose' },
   ];
   const line = p ? [p.designation, p.organisation].filter(Boolean).join(' · ') : '';
 
@@ -67,8 +67,9 @@ export function Profile() {
       <header className="top"><Logo /><AccountMenu photo={p?.photo} /></header>
       <main className="dash-main prof">
         {prof.error ? <LoadError /> : !p ? <Spinner label="Setting up your profile" /> : (
-          <section className="prof-id" aria-label="Your profile">
-            <Avatar id={user.uid} name={p.name} photo={p.photo || undefined} size={88} />
+          <section className="prof-id prof-card" aria-label="Your profile">
+            <div className="prof-cover" aria-hidden="true"><i /><i /><i /></div>
+            <Avatar id={user.uid} name={p.name} photo={p.photo || undefined} size={92} />
             <div className="prof-who">
               <h1>{p.name}</h1>
               {p.username && <p className="prof-handle">@{p.username}</p>}
@@ -76,6 +77,12 @@ export function Profile() {
               {line && <p className="muted">{line}</p>}
               {p.location && <p className="muted prof-meta"><MapPin size={14} aria-hidden="true" /> {p.location}</p>}
             </div>
+            {done && done.percent < 100 && (
+              <Link href="/profile/edit" className="prof-pill" title={`Add ${done.missing.join(', ').toLowerCase()}`}>
+                <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="8" className="ring-bg" /><circle cx="10" cy="10" r="8" className="ring-fg" style={{ strokeDasharray: `${(done.percent / 100) * 50.3} 50.3` }} /></svg>
+                Profile {done.percent}% complete · <b>Finish</b>
+              </Link>
+            )}
             <div className="prof-actions">
               <Link className="btn btn-ink btn-sm" href="/profile/edit"><Pencil size={15} /> Edit profile</Link>
               <button className="btn btn-ghost btn-sm" onClick={share}><Share2 size={15} /> Share</button>
@@ -88,34 +95,30 @@ export function Profile() {
           </section>
         )}
 
-        {done && done.percent < 100 && (
-          <Link href="/profile/edit" className="prof-complete">
-            <div className="row-between"><b>Profile {done.percent}% complete</b><span className="muted small">Add {done.missing.slice(0, 2).join(', ').toLowerCase()}{done.missing.length > 2 ? '…' : ''}</span></div>
-            <span className="prof-bar"><i style={{ width: `${done.percent}%` }} /></span>
-          </Link>
-        )}
-
+        <h2 className="prof-label">Your activity</h2>
         <dl className="prof-stats">
           {stats.map((st) => (
             <Link key={st.label} href={st.href}>
-              <st.icon size={18} aria-hidden="true" />
+              <span className={`prof-ic c-${st.tone}`}><st.icon size={17} aria-hidden="true" /></span>
               <dd>{pings.loading && (st.label === 'Connections' || st.label === 'Requests') ? '…' : st.n}</dd>
               <dt>{st.label}</dt>
             </Link>
           ))}
         </dl>
 
+        <h2 className="prof-label">Shortcuts</h2>
         <nav className="prof-list" aria-label="Your Gather">
-          <Link href="/people"><Users size={19} aria-hidden="true" /><span className="grow"><b>My people</b><small>Connections and Meet Ping requests</small></span>{pings.incoming.length > 0 && <span className="count-badge">{pings.incoming.length}</span>}<ChevronRight size={18} aria-hidden="true" /></Link>
-          <Link href="/saved"><Bookmark size={19} aria-hidden="true" /><span className="grow"><b>Saved events</b><small>{saved ? `${saved} saved` : 'Events you saved in Explore'}</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
-          <Link href="/speaker"><Mic size={19} aria-hidden="true" /><span className="grow"><b>Speaker area</b><small>Enter your event’s speaker code, see feedback, run Pulse</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
+          <Link href="/people"><span className="prof-ic c-violet"><Users size={18} aria-hidden="true" /></span><span className="grow"><b>My people</b><small>Connections and Meet Ping requests</small></span>{pings.incoming.length > 0 && <span className="count-badge">{pings.incoming.length}</span>}<ChevronRight size={18} aria-hidden="true" /></Link>
+          <Link href="/saved"><span className="prof-ic c-amber"><Bookmark size={18} aria-hidden="true" /></span><span className="grow"><b>Saved events</b><small>{saved ? `${saved} saved` : 'Events you saved in Explore'}</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
+          <Link href="/speaker"><span className="prof-ic c-blue"><Mic size={18} aria-hidden="true" /></span><span className="grow"><b>Speaker area</b><small>Enter your event’s speaker code, see feedback, run Pulse</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
           {certs.data.map((c) => (
-            <Link key={c.id} href={`/verify/${c.id}`}><BadgeCheck size={19} aria-hidden="true" /><span className="grow"><b>{c.eventTitle}</b><small>Certificate · {c.title}</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
+            <Link key={c.id} href={`/verify/${c.id}`}><span className="prof-ic c-lime"><BadgeCheck size={18} aria-hidden="true" /></span><span className="grow"><b>{c.eventTitle}</b><small>Certificate · {c.title}</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
           ))}
         </nav>
 
-        {canOrganise && <section className="prof-mode"><RoleToggle /></section>}
+        {canOrganise && <><h2 className="prof-label">Mode</h2><section className="prof-mode"><RoleToggle /></section></>}
 
+        {p && (p.bio || p.skills.length > 0 || p.interests.length > 0 || p.linkedin || p.website || p.portfolio || p.links.length > 0) && <h2 className="prof-label">About you</h2>}
         {p && <ProfileDetails p={p} />}
 
         <DeleteAccount user={user} />
