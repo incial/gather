@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { CsvButton, DemoBanner, Empty, ErrorNote, Field, Logo, Modal, Spinner, useToast } from '../../components/ui';
 import { addOrganiser, createEvent, isDeletedEvent, loadFdpProgramme, removeOrganiser, syncCapacityCounter } from '../../lib/api';
 import { AccountMenu } from '../../components/AccountMenu';
+import { CREATE_EVENT } from '../../components/ModeSwitch';
 import { useAuth } from '../../lib/auth';
 import { fmtDateTime, fmtRange, friendlyError } from '../../lib/format';
 import { useCol } from '../../lib/live';
@@ -21,8 +22,8 @@ type Phase = 'live' | 'upcoming' | 'past';
 const phaseOf = (e: EventDoc, now: number): Phase => (Date.parse(e.endsAt) < now ? 'past' : Date.parse(e.startsAt) <= now ? 'live' : 'upcoming');
 type Filter = 'all' | Phase | 'draft' | 'deleted';
 
-/** Top bar shared by the organiser home: Events, Pulse, Team and God view on the left; Create event, the mode switch and the account on the right. */
-export function OrganiserTop({ active, onTeam, onCreate }: { active: 'events' | 'god'; onTeam?: () => void; onCreate?: () => void }) {
+/** Top bar shared by the organiser home: Events, Pulse, Team and God view on the left; the Events / Create Event switch and the account on the right. */
+export function OrganiserTop({ active, onTeam }: { active: 'events' | 'god'; onTeam?: () => void }) {
   const { isSuper } = useAuth();
   return (
     <header className="admin-top org-top">
@@ -33,9 +34,6 @@ export function OrganiserTop({ active, onTeam, onCreate }: { active: 'events' | 
         {onTeam && <button onClick={onTeam}><Users size={16} /> Team</button>}
         {isSuper && <Link href="/god" className={active === 'god' ? 'on' : ''}><Crown size={16} /> God view</Link>}
       </nav>
-      {onCreate
-        ? <button className="org-create" onClick={onCreate}><Plus size={16} /> <span>Create event</span></button>
-        : <Link className="org-create" href="/admin?create=1"><Plus size={16} /> <span>Create event</span></Link>}
       <AccountMenu />
     </header>
   );
@@ -53,11 +51,12 @@ export function AdminHome() {
   const events = useMemo(() => ({ ...managed, data: active }), [managed, active]);
   const organisers = useCol<{ id: string; addedAt?: string }>(isSuper ? 'organisers' : null);
   const [creating, setCreating] = useState(false);
-  // "Create event" from another screen's top bar lands here with ?create=1.
+  // "Create Event" in the top bar: from another screen it lands here with ?create=1; on this screen it sends an event.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('create') !== '1') return;
-    setCreating(true);
-    nav.replace('/admin');
+    const open = () => setCreating(true);
+    if (new URLSearchParams(window.location.search).get('create') === '1') { open(); nav.replace('/admin'); }
+    window.addEventListener(CREATE_EVENT, open);
+    return () => window.removeEventListener(CREATE_EVENT, open);
   }, [nav]);
   const [team, setTeam] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -92,7 +91,7 @@ export function AdminHome() {
   return (
     <div className="admin">
       <DemoBanner />
-      <OrganiserTop active="events" onTeam={isSuper ? () => setTeam(true) : undefined} onCreate={() => setCreating(true)} />
+      <OrganiserTop active="events" onTeam={isSuper ? () => setTeam(true) : undefined} />
       <main className="admin-main org-main">
         <section className="org-hero">
           <div>

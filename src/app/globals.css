@@ -2016,8 +2016,6 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
 .mode-switch.is-attendee button.on { background: var(--grad); color: #fff; }
 .mode-switch.is-organiser button.on { background: var(--ink); color: #fff; }
 .mode-switch.is-organiser button.on svg { color: var(--lime); }
-.org-create { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 0; border-radius: 99px; background: var(--lime); color: var(--ink); font-weight: 650; font-size: 14.5px; text-decoration: none; white-space: nowrap; }
-.org-create:hover { filter: brightness(.96); }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .seg-sm button { min-height: 36px; font-size: 14px; padding-inline: 14px; }
 .organisers .org-note { opacity: .6; font-size: 14px; }
@@ -2029,8 +2027,6 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
   .mode-switch { padding: 3px; }
   .mode-switch button { padding: 0 9px; font-size: 13px; min-height: 34px; }
   .mode-switch button svg { display: none; }
-  .org-create { width: 40px; padding: 0; justify-content: center; flex: none; }
-  .org-create span { display: none; }
   .acct { gap: 4px; }
   .acct .bell { width: 36px; margin-right: 0; }
 }
