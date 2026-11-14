@@ -7,7 +7,11 @@ export type Unsub = () => void;
 export type Where = [field: string, value: unknown][];
 /** Optional query shaping. orderBy + after give cursor paging; limit caps the documents read. */
 /** `after` is [value of orderBy field, document id] of the last row, so equal values never skip rows. */
-export interface QueryOpts { orderBy?: string; limit?: number; after?: [string, string]; /** Newest first. Not combined with `after`. */ desc?: boolean }
+export interface QueryOpts {
+  orderBy?: string; limit?: number; after?: [string, string]; /** Newest first. Not combined with `after`. */ desc?: boolean;
+  /** Only rows whose orderBy field is at least this value (for example events ending after now). With an equality filter on another field it needs a composite index. */
+  from?: string;
+}
 
 export type WriteOp =
   | { type: 'set'; path: string; data: Record<string, unknown>; merge?: boolean }

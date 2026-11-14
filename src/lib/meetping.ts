@@ -114,6 +114,9 @@ export async function resendPing(p: PingDoc, message: string) {
   notifyWhatsApp(p.id);
 }
 
+/** The newest notifications, as Inbox and Activity show them (one shared listener, not the whole history). */
+export const RECENT_NOTES = { orderBy: 'at', desc: true, limit: 30 } as const;
+
 export const markRead = (uid: string, ids: string[]) =>
   ids.length ? backend.write(ids.map((id) => ({ type: 'set' as const, path: `users/${uid}/notifications/${id}`, merge: true, data: { read: true } }))) : Promise.resolve();
 

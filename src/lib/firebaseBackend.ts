@@ -40,6 +40,7 @@ export function createFirebaseBackend(): Backend {
   const buildQuery = (path: string, w: Where, opts?: QueryOpts): Query => {
     // A field written as 'name[]' means "this list contains the value" (array-contains); anything else is equality.
     const parts = [...w.map(([f, v]) => (f.endsWith('[]') ? where(f.slice(0, -2), 'array-contains', v) : where(f, '==', v)))];
+    if (opts?.orderBy && opts.from !== undefined) parts.push(where(opts.orderBy, '>=', opts.from));
     const shaped = [
       ...(opts?.orderBy ? [orderBy(opts.orderBy, opts.desc ? 'desc' : 'asc'), orderBy(documentId(), opts.desc ? 'desc' : 'asc')] : []),
       ...(opts?.orderBy && opts.after ? [startAfter(...opts.after)] : []),

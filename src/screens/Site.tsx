@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { DemoBanner, Icon, Logo } from '../components/ui';
 import { WARP_CAROUSEL_CARDS, WarpCarousel, type WarpCard } from '../components/ui/warp-carousel';
-import { backend } from '../lib/backend';
+import { getUpcomingEvents } from '../lib/upcoming';
 import { typeInfo } from '../lib/eventTypes';
 import { fmtDate, fmtTime, hue } from '../lib/format';
 import type { Accent, EventDoc } from '../lib/types';
@@ -50,7 +50,8 @@ function useUpcoming(max = 8, defer = false) {
     // A returning signed-in visitor is about to see their own Home: skip reading the events.
     if (defer && document.documentElement.hasAttribute('data-auth')) return;
     let live = true;
-    backend.getCol<EventDoc>('events', [['published', true]], { limit: 60 })
+    // Only events that haven't ended, read in end order (not 60 published events of any date).
+    getUpcomingEvents(Math.max(24, max * 3))
       .then((all) => {
         if (!live) return;
         const now = Date.now();

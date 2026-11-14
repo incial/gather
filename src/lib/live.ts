@@ -26,6 +26,7 @@ export function resetLive() {
   for (const e of registry.values()) { e.stop(); clearTimeout(e.timer); clearTimeout(e.retry); }
   const keys = [...registry.keys()];
   registry.clear();
+  counts.clear();
   return keys.length;
 }
 
@@ -89,18 +90,48 @@ export function useCol<T>(path: string | null, where: Where = [], opts?: QueryOp
   return s;
 }
 
+/**
+ * Recent counts, so a row that unmounts and mounts again (filtering a table, switching tabs) shows the
+ * number it already had instead of asking the server again. Two screens asking for the same count at
+ * once share one request. refresh() always asks the server.
+ */
+const COUNT_TTL_MS = 60_000;
+const counts = new Map<string, { n: number; at: number; gen: number }>();
+const pendingCounts = new Map<string, Promise<number>>();
+function countOnce(path: string, where: Where, key: string, fresh: boolean): Promise<number> {
+  const hit = counts.get(key);
+  if (!fresh && hit && hit.gen === generation && Date.now() - hit.at < COUNT_TTL_MS) return Promise.resolve(hit.n);
+  const inFlight = pendingCounts.get(key);
+  if (inFlight) return inFlight;
+  const g = generation;
+  const p = backend.count(path, where)
+    .then((n) => { if (g === generation) counts.set(key, { n, at: Date.now(), gen: g }); return n; })
+    .finally(() => { pendingCounts.delete(key); });
+  pendingCounts.set(key, p);
+  return p;
+}
+
+/** Records a count the screen already knows (for example the length of a live list), so useCount shows it without a read. */
+export function primeCount(path: string, where: Where, n: number) {
+  counts.set(`${path}:${JSON.stringify(where)}`, { n, at: Date.now(), gen: generation });
+}
+
 /** A one-time count (no listener). Call refresh() to update it. */
 export function useCount(path: string | null, where: Where = []): { n: number | null; error: boolean; refresh: () => void } {
-  const [n, setN] = useState<number | null>(null);
+  const gen = useGeneration();
+  const wkey = JSON.stringify(where);
+  const ckey = `${path}:${wkey}`;
+  const [n, setN] = useState<number | null>(() => {
+    const hit = path ? counts.get(ckey) : undefined;
+    return hit && hit.gen === generation ? hit.n : null;
+  });
   const [error, setError] = useState(false);
   const [tick, setTick] = useState(0);
-  const gen = useGeneration();
-  const key = JSON.stringify(where);
   useEffect(() => {
     if (!path) return;
     let live = true;
-    backend.count(path, JSON.parse(key)).then((c) => { if (live) { setN(c); setError(false); } }).catch(() => { if (live) setError(true); });
+    countOnce(path, JSON.parse(wkey), ckey, tick > 0).then((c) => { if (live) { setN(c); setError(false); } }).catch(() => { if (live) setError(true); });
     return () => { live = false; };
-  }, [path, key, tick, gen]);
+  }, [path, wkey, ckey, tick, gen]);
   return { n, error, refresh: () => setTick((t) => t + 1) };
 }

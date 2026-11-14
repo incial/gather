@@ -28,7 +28,7 @@ export function DataTab() {
 
   async function zip() {
     setZipping(true);
-    try { downloadZip(await data()); } catch { toast('Couldn’t prepare the export. Check your connection and try again.', 'err'); }
+    try { await downloadZip(await data()); } catch { toast('Couldn’t prepare the export. Check your connection and try again.', 'err'); }
     setZipping(false);
   }
   return (

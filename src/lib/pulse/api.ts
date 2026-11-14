@@ -181,10 +181,10 @@ export async function findPulseByCode(code: string) {
 
 export async function deletePulse(p: PulseDoc) {
   const ops: WriteOp[] = [];
-  for (const sub of ['responses', 'qa', 'submissions', 'starts', 'live', 'private', 'vault', 'counter']) {
-    const docs = await backend.getCol<{ id: string }>(`${P(p.id)}/${sub}`).catch(() => []);
-    ops.push(...docs.map((d) => ({ type: 'delete' as const, path: `${P(p.id)}/${sub}/${d.id}` })));
-  }
+  const subs = ['responses', 'qa', 'submissions', 'starts', 'live', 'private', 'vault', 'counter'];
+  // All eight lists at once rather than one after another.
+  const lists = await Promise.all(subs.map((sub) => backend.getCol<{ id: string }>(`${P(p.id)}/${sub}`).catch(() => [])));
+  subs.forEach((sub, i) => ops.push(...lists[i].map((d) => ({ type: 'delete' as const, path: `${P(p.id)}/${sub}/${d.id}` }))));
   ops.push({ type: 'delete', path: `pulseCodes/${p.code}` }, { type: 'delete', path: P(p.id) });
   await backend.write(ops);
 }

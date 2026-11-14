@@ -48,7 +48,7 @@ export function Overview() {
 
   async function exportAll() {
     setExporting(true);
-    try { downloadZip(await loadEventData(base)); } catch { toast('Couldn’t prepare the export. Check your connection and try again.', 'err'); }
+    try { await downloadZip(await loadEventData(base)); } catch { toast('Couldn’t prepare the export. Check your connection and try again.', 'err'); }
     setExporting(false);
   }
 

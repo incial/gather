@@ -1,6 +1,5 @@
 'use client';
 
-import QRCode from 'qrcode';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
@@ -98,8 +97,9 @@ export function QrImage({ text, size = 240, label }: { text: string; size?: numb
   const [src, setSrc] = useState('');
   useEffect(() => {
     let live = true;
-    QRCode.toDataURL(text, { width: size * 2, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#1B1530', light: '#FFFFFF' } })
-      .then((u) => { if (live) setSrc(u); });
+    // Loaded on first use, so pages without a QR code (the home page included) don't download the library.
+    import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(text, { width: size * 2, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#1B1530', light: '#FFFFFF' } }))
+      .then((u) => { if (live) setSrc(u); }).catch(() => {});
     return () => { live = false; };
   }, [text, size]);
   return <div className="qr" style={{ width: size, height: size }}>{src && <img src={src} alt={label} />}</div>;

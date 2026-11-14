@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Scanner } from '../../components/Scanner';
 import { CsvButton, Empty, Modal, useToast } from '../../components/ui';
 import { markAttendance, setSelfCheckIn, unmarkAttendance } from '../../lib/api';
-import { useCount } from '../../lib/live';
+import { primeCount, useCount } from '../../lib/live';
 import type { SessionDoc } from '../../lib/types';
 import { useEffect } from 'react';
 import { attendanceLogSheet, attendanceRegisterSheet } from '../../lib/exports';
@@ -37,20 +37,31 @@ function CheckInHistory({ eventId }: { eventId: string }) {
 }
 import { BadgeCheck, CircleAlert, CircleX, Hand, RefreshCw, ScanLine, Search } from 'lucide-react';
 
-/** One session in the overview: how many attended (a count, so 1 read), and whether self check-in is open. */
-function SessionTile({ eventId, s, total, active, onOpen, tick }: { eventId: string; s: SessionDoc; total: number; active: boolean; onOpen: () => void; tick: number }) {
-  const c = useCount(`events/${eventId}/attendance`, [['sessionId', s.id]]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (tick) c.refresh(); }, [tick]);
-  const n = c.n ?? 0;
-  const pct = total ? Math.round((n / total) * 100) : 0;
+/**
+ * One session in the overview: how many attended, and whether self check-in is open. The selected
+ * session's number comes from its live list (`present`, no extra read); the others use a count
+ * (1 read). The automatic refresh (`tick`) only re-counts sessions happening now; `all` (the
+ * Refresh button) re-counts every session.
+ */
+function SessionTile({ eventId, s, total, active, present, onOpen, tick, all }: { eventId: string; s: SessionDoc; total: number; active: boolean; present: number | null; onOpen: () => void; tick: number; all: number }) {
   const now = Date.now();
   const live = Date.parse(s.startsAt) <= now && Date.parse(s.endsAt) >= now;
+  const path = `events/${eventId}/attendance`;
+  // While selected, keep the shared count in step with the live list, so it's current when another session is picked.
+  useEffect(() => { if (present !== null) primeCount(path, [['sessionId', s.id]], present); }, [present, path, s.id]);
+  const c = useCount(present === null ? path : null, [['sessionId', s.id]]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (tick && live && present === null) c.refresh(); }, [tick]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (all && present === null) c.refresh(); }, [all]);
+  const count = present ?? c.n;
+  const n = count ?? 0;
+  const pct = total ? Math.round((n / total) * 100) : 0;
   return (
     <button type="button" className={`sess-tile${active ? ' on' : ''}`} onClick={onOpen} aria-pressed={active}>
       <span className="sess-tile-top"><small>{fmtTime(s.startsAt)}{live && <i className="pill pill-live">Now</i>}</small>{s.selfCheckIn && <i className="sess-self" title="Self check-in is open"><Hand size={13} aria-hidden="true" /> Self</i>}</span>
       <b>{s.title}</b>
-      <span className="sess-tile-n"><b>{c.n === null ? '…' : n}</b> / {total} <small>{pct}%</small></span>
+      <span className="sess-tile-n"><b>{count === null ? '…' : n}</b> / {total} <small>{pct}%</small></span>
       <span className="sess-bar"><i style={{ width: `${pct}%` }} /></span>
     </button>
   );
@@ -67,14 +78,18 @@ export function Attendance() {
   const sessionId = picked || sorted[0]?.id || '';
   const [scanning, setScanning] = useState(false);
   // Only this session's check-ins are loaded, not every session's.
-  const attendance = useAdminCol('attendance', sessionId ? [['sessionId', sessionId]] : [['sessionId', '-']]).data;
+  const attendanceCol = useAdminCol('attendance', sessionId ? [['sessionId', sessionId]] : [['sessionId', '-']]);
+  const attendance = attendanceCol.data;
+  const attendanceLoading = attendanceCol.loading;
   const present = new Map(attendance.map((a) => [a.uid, a]));
   const lastScan = useRef('');
   const session = sorted.find((s) => s.id === sessionId);
-  // Session counts refresh every 30 seconds, and straight away when this session's list changes.
+  // The selected session's tile follows its live list. Sessions happening now re-count every 30 seconds
+  // (people check themselves in); Refresh re-counts them all. Before, every tile re-counted every 30
+  // seconds and on every single check-in, which cost one read per session each time.
   const [tick, setTick] = useState(0);
+  const [all, setAll] = useState(0);
   useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 30_000); return () => clearInterval(t); }, []);
-  useEffect(() => { setTick((n) => n + 1); }, [attendance.length]);
   async function toggleSelf(on: boolean) {
     if (!session) return;
     try { await setSelfCheckIn(event.id, session.id, on); toast(on ? `Attendees can now mark themselves present for “${session.title}”` : 'Self check-in closed'); }
@@ -109,9 +124,9 @@ export function Attendance() {
       </div>
       {!sorted.length ? <Empty title="Add sessions first">Attendance is taken per session.</Empty> : <>
         {/* Every session at a glance; tap one to see and edit its list below */}
-        <div className="row-between"><h3 className="sub-h">All sessions</h3><button className="btn btn-ghost btn-sm" onClick={() => setTick((n) => n + 1)}><RefreshCw size={14} /> Refresh</button></div>
+        <div className="row-between"><h3 className="sub-h">All sessions</h3><button className="btn btn-ghost btn-sm" onClick={() => setAll((n) => n + 1)}><RefreshCw size={14} /> Refresh</button></div>
         <div className="sess-grid">
-          {sorted.map((s) => <SessionTile key={s.id} eventId={event.id} s={s} total={attendees.length} active={s.id === sessionId} onOpen={() => setPicked(s.id)} tick={tick} />)}
+          {sorted.map((s) => <SessionTile key={s.id} eventId={event.id} s={s} total={attendees.length} active={s.id === sessionId} present={s.id === sessionId && !attendanceLoading ? present.size : null} onOpen={() => setPicked(s.id)} tick={tick} all={all} />)}
         </div>
         <div className="row-between">
           <select aria-label="Session" className="grow" value={sessionId} onChange={(e) => setPicked(e.target.value)}>

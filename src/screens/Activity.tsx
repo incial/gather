@@ -13,7 +13,7 @@ import { useAuth } from '../lib/auth';
 import { backend } from '../lib/backend';
 import { fmtDateTime, fmtTime, friendlyError } from '../lib/format';
 import { useCol } from '../lib/live';
-import type { NotificationDoc } from '../lib/meetping';
+import { RECENT_NOTES, type NotificationDoc } from '../lib/meetping';
 import { useMode } from '../lib/mode';
 import type { PulseDoc } from '../lib/pulse/types';
 import type { MembershipDoc, SessionDoc, SpeakingDoc } from '../lib/types';
@@ -41,7 +41,8 @@ export function Activity() {
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/activity'); }, [loading, user, nav]);
   const mine = useMyEvents(user?.uid);
   const speaking = useCol<SpeakingDoc>(user ? `users/${user.uid}/speaking` : null);
-  const notes = useCol<NotificationDoc>(user ? `users/${user.uid}/notifications` : null);
+  // The Inbox's newest-30 query (one shared listener), not the whole notification history.
+  const notes = useCol<NotificationDoc>(user ? `users/${user.uid}/notifications` : null, [], RECENT_NOTES);
   const [now] = useState(() => Date.now());
   const [chosen, setChosen] = useState('');
   // Organisers also see the events they run (created, or on the team), even ones they haven't joined as an attendee.
@@ -57,7 +58,7 @@ export function Activity() {
   const amSpeaker = speaking.data.some((s) => s.eventId === eventId);
 
   if (loading || !user) return <div className="center"><Spinner /></div>;
-  const recentNotes = [...notes.data].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')).slice(0, 4);
+  const recentNotes = notes.data.slice(0, 4);
 
   return (
     <div className="dash">

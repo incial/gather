@@ -1,4 +1,3 @@
-import QRCode from 'qrcode';
 import { backend, type WriteOp } from './backend';
 import { fmtRange } from './format';
 import type { AttendanceDoc, AttendeeDoc, CertConfig, CertificateDoc, EventDoc, FeedbackDoc, SessionDoc, SessionFeedbackDoc } from './types';
@@ -90,6 +89,7 @@ export async function drawCertificate(c: CertificateDoc, verifyUrl: string): Pro
     g.textAlign = 'center'; g.fillStyle = '#0B0B0F'; g.font = '600 30px "Geist Variable", system-ui, sans-serif'; g.fillText(s.name, x, 1050);
     g.fillStyle = '#5F6068'; g.font = '400 24px "Geist Variable", system-ui, sans-serif'; g.fillText(s.title, x, 1088); g.textAlign = 'left';
   });
+  const { default: QRCode } = await import('qrcode');
   const qr = await QRCode.toDataURL(verifyUrl, { width: 220, margin: 1, color: { dark: '#0B0B0F', light: '#FFFFFF' } });
   const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = qr; });
   g.drawImage(img, W - 300, 110, 170, 170);

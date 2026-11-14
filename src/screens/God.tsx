@@ -21,6 +21,8 @@ import { STATUS_LABEL } from './pulse/PulseHome';
 interface UserRow { id: string; name?: string; email?: string; photo?: string; lastSignIn?: string }
 type Tab = 'events' | 'people' | 'pulse' | 'team';
 const PAGE = 50;
+/** Events shown per step in the God view table. */
+const ROWS = 50;
 
 /** God view: the super admin's view of the whole platform. Only people in superAdmins can open it. */
 export function God() {
@@ -81,6 +83,9 @@ function AllEvents() {
   const events = useCol<EventDoc>('events');
   const [q, setQ] = useState('');
   const [show, setShow] = useState<'active' | 'deleted'>('active');
+  // Each row reads its own "Joined" count, so the table shows ROWS at a time instead of every event at once.
+  const [rowsShown, setRowsShown] = useState(ROWS);
+  useEffect(() => { setRowsShown(ROWS); }, [q, show]);
   const nDeleted = events.data.filter(isDeletedEvent).length;
   const list = useMemo(() => [...events.data].filter((e) => isDeletedEvent(e) === (show === 'deleted')).sort((a, b) => b.startsAt.localeCompare(a.startsAt)).filter((e) => !q || `${e.title} ${e.organiser} ${e.venue}`.toLowerCase().includes(q.toLowerCase())), [events.data, q, show]);
   const sheet = { name: show === 'deleted' ? 'deleted-events' : 'all-events', columns: ['Title', 'Organiser', 'Venue', 'Starts', 'Ends', 'Visibility', 'Join code', 'Link', 'Deleted by', 'Deleted at'], rows: list.map((e) => ({ Title: e.title, Organiser: e.organiser, Venue: e.venue, Starts: fmtDateTime(e.startsAt), Ends: fmtDateTime(e.endsAt), Visibility: e.deleted ? 'Deleted' : VISIBILITY_LABEL[visibilityOf(e)], 'Join code': e.joinCode, Link: eventUrl(e.id), 'Deleted by': e.deletedByEmail ?? '', 'Deleted at': fmtDateTime(e.deletedAt) })) };
@@ -95,9 +100,10 @@ function AllEvents() {
       <div className="table-wrap">
         <table className="table">
           <thead><tr><th>Event</th><th>When</th><th>Visibility</th><th>Joined</th><th></th></tr></thead>
-          <tbody>{list.map((e) => <EventRow key={e.id} e={e} />)}</tbody>
+          <tbody>{list.slice(0, rowsShown).map((e) => <EventRow key={e.id} e={e} />)}</tbody>
         </table>
       </div>
+      {list.length > rowsShown && <button className="btn btn-ghost btn-sm" onClick={() => setRowsShown((n) => n + ROWS)}>Show {Math.min(ROWS, list.length - rowsShown)} more of {list.length - rowsShown}</button>}
       {!list.length && <Empty title={show === 'deleted' ? 'No deleted events' : 'No events'}>{show === 'deleted' ? 'Events organisers delete are kept here, visible only to super admins.' : 'Nothing matches.'}</Empty>}
     </section>
   );

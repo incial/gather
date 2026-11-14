@@ -10,7 +10,7 @@ import { EVENT_TYPES, TYPE_ORDER, typeInfo, type EventType } from '../lib/eventT
 import { swipe, useSwipes } from '../lib/saved';
 import { useAuth } from '../lib/auth';
 import { fmtRange, fmtTime, friendlyError } from '../lib/format';
-import { backend, type Where } from '../lib/backend';
+import { getUpcomingEvents } from '../lib/upcoming';
 import type { EventDoc, SwipeDoc } from '../lib/types';
 
 const THRESHOLD = 90;
@@ -124,7 +124,7 @@ export function Explore() {
   const { user, loading } = useAuth();
   const nav = useRouter();
   const toast = useToast();
-  const listed = useOnce<EventDoc>('events', [['published', true]], 60);
+  const listed = useUpcoming(60);
   // Deleted events never show (the rules already hide soft-deleted ones; this also covers an unfinished permanent delete).
   const listedData = useMemo(() => listed.data.filter((e) => !isDeletedEvent(e)), [listed.data]);
   const published = { ...listed, data: listedData };
@@ -260,16 +260,15 @@ export function Explore() {
   );
 }
 
-/** Reads a list once (no live listener), capped at `max` documents. */
-function useOnce<T>(path: string, where: Where, max: number) {
-  const [s, set] = useState<{ data: T[]; loading: boolean; error: Error | null }>({ data: [], loading: true, error: null });
-  const key = JSON.stringify(where);
+/** Upcoming published events, read once (no live listener), capped at `max` documents. */
+function useUpcoming(max: number) {
+  const [s, set] = useState<{ data: EventDoc[]; loading: boolean; error: Error | null }>({ data: [], loading: true, error: null });
   useEffect(() => {
     let live = true;
-    backend.getCol<T>(path, JSON.parse(key), { limit: max })
+    getUpcomingEvents(max)
       .then((data) => { if (live) set({ data, loading: false, error: null }); })
       .catch((error) => { if (live) set({ data: [], loading: false, error }); });
     return () => { live = false; };
-  }, [path, key, max]);
+  }, [max]);
   return s;
 }

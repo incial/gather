@@ -1,6 +1,6 @@
 'use client';
 
-import jsQR from 'jsqr';
+import type jsQRType from 'jsqr';
 import { useEffect, useRef, useState } from 'react';
 
 interface Props {
@@ -21,13 +21,15 @@ export function Scanner({ onResult, continuous }: Props) {
     let stopped = false;
     let last = '';
     let lastAt = 0;
+    // The QR decoder is loaded when a camera opens, not with every page that can show a scanner.
+    let jsQR: typeof jsQRType | undefined;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
 
     const scan = () => {
       const v = video.current;
       if (stopped || !v) return;
-      if (v.readyState >= 2 && v.videoWidth) {
+      if (jsQR && v.readyState >= 2 && v.videoWidth) {
         const scale = Math.min(1, 640 / v.videoWidth);
         canvas.width = v.videoWidth * scale;
         canvas.height = v.videoHeight * scale;
@@ -46,6 +48,7 @@ export function Scanner({ onResult, continuous }: Props) {
     (async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('unsupported');
+        import('jsqr').then((m) => { jsQR = m.default; }).catch(() => {});
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
         if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
         const v = video.current!;

@@ -1,4 +1,3 @@
-import { strToU8, zipSync } from 'fflate';
 import { downloadBlob, toCsv, type Row } from './csv';
 import { fmtDateTime } from './format';
 import type { AttendanceDoc, AttendeeDoc, ConnectionDoc, EventDoc, EventInfoDoc, FeedbackDoc, PreregDoc, SavedDoc, SessionDoc, SessionFeedbackDoc, SpeakerDoc } from './types';
@@ -138,7 +137,9 @@ export const allSheets = (d: EventData) => [
 
 export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'event';
 
-export function downloadZip(d: EventData) {
+/** Zips every sheet. The zip library is loaded only when someone downloads. */
+export async function downloadZip(d: EventData) {
+  const { strToU8, zipSync } = await import('fflate');
   const files = Object.fromEntries(allSheets(d).map((s) => [`${s.name}.csv`, strToU8(toCsv(s.rows, s.columns))]));
   const zipped = zipSync(files);
   downloadBlob(`${slug(d.event.title)}-all-data.zip`, new Blob([zipped.slice()], { type: 'application/zip' }));

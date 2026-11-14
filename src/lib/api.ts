@@ -2,6 +2,7 @@ import { backend, type WriteOp } from './backend';
 import { deletePulse } from './pulse/api';
 import { newRegId, sortSpeakers } from './speakers';
 import { swipe, unsave } from './saved';
+import { dueEvery, TIDY_EVERY_MS } from './once';
 import type { PulseDoc } from './pulse/types';
 import { FDP_EVENT, FDP_SESSIONS, FDP_SPEAKERS } from './programme';
 import { DEFAULT_QUESTIONS } from './questions';
@@ -43,9 +44,9 @@ export const getMyProfile = (uid: string) => backend.getDoc<SavedProfile>(profil
  * event is open. Returns false when the form is still needed.
  */
 export async function quickJoin(eventId: string, user: AppUser): Promise<{ joined: boolean; event: EventDoc | null }> {
-  const event = await backend.getDoc<EventDoc>(`events/${eventId}`);
+  // Both reads at once: the event and this person's saved details don't depend on each other.
+  const [event, saved] = await Promise.all([backend.getDoc<EventDoc>(`events/${eventId}`), getMyProfile(user.uid)]);
   if (!event) return { joined: false, event: null };
-  const saved = await getMyProfile(user.uid);
   if (!saved?.name || !saved.phone || event.registration !== 'open') return { joined: false, event };
   const { id: _id, listed, ...profile } = saved;
   await joinEvent(event, user, profile, 'app', listed);
@@ -112,12 +113,16 @@ export type CheckInResult = 'ok' | 'already' | 'expired';
 export async function checkIn(eventId: string, sessionId: string, me: AttendeeDoc, key: string | null): Promise<CheckInResult> {
   const id = `${sessionId}_${me.uid}`;
   const path = `events/${eventId}/attendance/${id}`;
-  if (await backend.getDoc(path)) return 'already';
+  // Both reads at once (this runs on every scan at the door of a session).
+  const [existing, fresh] = await Promise.all([
+    backend.getDoc(path),
+    backend.getDoc<AttendeeDoc>(`events/${eventId}/attendees/${me.uid}`).catch(() => null),
+  ]);
+  if (existing) return 'already';
   const session: WriteOp = { type: 'set', path, data: key === null
     ? { uid: me.uid, sessionId, name: me.name, email: me.email, method: 'self', at: backend.now() }
     : { uid: me.uid, sessionId, name: me.name, email: me.email, method: 'qr', key: key.trim().toUpperCase(), at: backend.now() } };
   // The first scan of the event also marks you present at the event (same record your pass and the organiser use).
-  const fresh = await backend.getDoc<AttendeeDoc>(`events/${eventId}/attendees/${me.uid}`).catch(() => null);
   const present: WriteOp[] = fresh && !fresh.checkedIn ? [
     { type: 'set', path: `events/${eventId}/attendees/${me.uid}`, merge: true, data: { checkedIn: true, checkedInAt: backend.now(), checkInMethod: 'self', checkedInBy: me.uid, checkInSession: sessionId } },
     { type: 'set', path: `events/${eventId}/checkinLog/${backend.newId()}`, data: { uid: me.uid, name: me.name, action: 'in', method: 'self', by: me.uid, byName: me.name, at: backend.now() } },
@@ -248,30 +253,29 @@ export async function purgeEvent(id: string, onStep?: (s: string) => void) {
   await backend.write([{ type: 'set', path: `events/${id}`, merge: true, data: { deleting: true } }]);
   onStep?.('Finding everything in this event…');
   ops.push({ type: 'delete', path: `speakerPins/${id}` });
-  // People's own copies first, while the attendee and saved lists still exist.
-  const [joined, savers] = await Promise.all([
+  // Every lookup at once (they don't depend on each other), instead of ~30 reads one after another.
+  const [joined, savers, codes, pulses, pings, certs, subDocs] = await Promise.all([
     backend.getCol<{ id: string }>(`events/${id}/attendees`),
     backend.getCol<{ id: string }>(`events/${id}/saved`),
+    // Speaker codes for this event (top-level, so they're found by event).
+    backend.getCol<{ id: string }>('speakerCodes', [['eventId', id]]).catch(() => []),
+    backend.getCol<PulseDoc>('pulse', [['eventId', id]]).catch(() => []),
+    // Meet Pings made at this event.
+    backend.getCol<{ id: string; fromUid: string; toUid: string }>('pings', [['eventId', id]]).catch(() => []),
+    // Certificates live in a top-level collection, linked by eventId.
+    backend.getCol<{ id: string }>('certificates', [['eventId', id]]),
+    Promise.all(subs.map((sub) => backend.getCol<{ id: string }>(`events/${id}/${sub}`))),
   ]);
+  // People's own copies first (in the same batches as the rest, in this order).
   for (const a of joined) ops.push({ type: 'delete', path: `users/${a.id}/events/${id}` }, { type: 'delete', path: `users/${a.id}/speaking/${id}` });
-  // Speaker codes for this event (top-level, so they're found by event).
-  const codes = await backend.getCol<{ id: string }>('speakerCodes', [['eventId', id]]).catch(() => []);
   ops.push(...codes.map((c) => ({ type: 'delete' as const, path: `speakerCodes/${c.id}` })));
   for (const s of new Set([...joined.map((a) => a.id), ...savers.map((x) => x.id)])) ops.push({ type: 'delete', path: `users/${s}/swipes/${id}` });
-  const pulses = await backend.getCol<PulseDoc>('pulse', [['eventId', id]]).catch(() => []);
-  // Meet Pings made at this event.
-  const pings = await backend.getCol<{ id: string; fromUid: string; toUid: string }>('pings', [['eventId', id]]).catch(() => []);
   ops.push(...pings.map((p) => ({ type: 'delete' as const, path: `pings/${p.id}` })));
   // …and the notifications they sent (the request to the recipient, the acceptance to the sender).
   for (const p of pings) ops.push({ type: 'delete', path: `users/${p.toUid}/notifications/${p.id}` }, { type: 'delete', path: `users/${p.fromUid}/notifications/${p.id}_ok` });
   if (pulses.length) onStep?.('Removing Pulse sessions…');
-  for (const p of pulses) await deletePulse(p);
-  for (const sub of subs) {
-    const docs = await backend.getCol<{ id: string }>(`events/${id}/${sub}`);
-    ops.push(...docs.map((d) => ({ type: 'delete' as const, path: `events/${id}/${sub}/${d.id}` })));
-  }
-  // Certificates live in a top-level collection, linked by eventId.
-  const certs = await backend.getCol<{ id: string }>('certificates', [['eventId', id]]);
+  await Promise.all(pulses.map((p) => deletePulse(p)));
+  subs.forEach((sub, i) => ops.push(...subDocs[i].map((d) => ({ type: 'delete' as const, path: `events/${id}/${sub}/${d.id}` }))));
   ops.push(...certs.map((c) => ({ type: 'delete' as const, path: `certificates/${c.id}` })));
   ops.push({ type: 'delete', path: `events/${id}` });
   onStep?.(`Deleting ${ops.length} records…`);
@@ -391,20 +395,19 @@ export const removeOrganiser = (email: string) =>
 
 /**
  * Removes a person's copies of events that no longer exist (deleted before hard delete
- * existed, or while they were offline). Runs at most once per session per person.
+ * existed, or while they were offline). Each copy costs one read to check, so this runs at
+ * most once a day per person on each device (it used to run every session).
  */
 export async function forgetDeletedEvents(uid: string, ids: string[], scope = 'events'): Promise<string[]> {
-  const key = `gather-healed-${scope}-${uid}`;
-  try { if (sessionStorage.getItem(key)) return []; sessionStorage.setItem(key, '1'); } catch { /* private mode */ }
+  if (!dueEvery(`gather-healed-${scope}-${uid}`, TIDY_EVERY_MS)) return [];
   const gone: string[] = [];
   await Promise.all(ids.map(async (id) => {
     try { if (!(await backend.getDoc(`events/${id}`))) gone.push(id); } catch { /* not readable is not proof it is gone */ }
   }));
-  if (gone.length) {
-    await Promise.all(gone.flatMap((id) => [
-      backend.write([{ type: 'delete', path: `users/${uid}/events/${id}` }]).catch(() => {}),
-      backend.write([{ type: 'delete', path: `users/${uid}/swipes/${id}` }]).catch(() => {}),
-    ]));
-  }
+  // One batch for all the removals instead of two writes per event.
+  if (gone.length) await backend.write(gone.flatMap((id) => [
+    { type: 'delete' as const, path: `users/${uid}/events/${id}` },
+    { type: 'delete' as const, path: `users/${uid}/swipes/${id}` },
+  ])).catch(() => {});
   return gone;
 }

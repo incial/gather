@@ -12,7 +12,7 @@ import { useAuth } from '../lib/auth';
 import { fmtDateTime, friendlyError } from '../lib/format';
 import { phoneError, normPhone } from '../lib/helpdesk';
 import { useCol, useDoc } from '../lib/live';
-import { answerPing, markRead, saveWhatsAppPrefs, type NotificationDoc, type PingDoc } from '../lib/meetping';
+import { answerPing, markRead, RECENT_NOTES, saveWhatsAppPrefs, type NotificationDoc, type PingDoc } from '../lib/meetping';
 
 
 /** /inbox: notifications and every Meet Ping, sorted into incoming, outgoing, connections and declined. */
@@ -21,22 +21,24 @@ export function Inbox() {
   const nav = useRouter();
   useEffect(() => { if (!loading && !user) nav.replace('/login?next=/inbox'); }, [loading, user, nav]);
   const uid = user?.uid;
-  const notes = useCol<NotificationDoc>(uid ? `users/${uid}/notifications` : null);
+  const notes = useCol<NotificationDoc>(uid ? `users/${uid}/notifications` : null, [], RECENT_NOTES);
+  // Same query as the bell's unread badge, so it shares that listener.
+  const unreadNotes = useCol<NotificationDoc>(uid ? `users/${uid}/notifications` : null, useMemo<[string, unknown][]>(() => [['read', false]], []));
   const inc = useCol<PingDoc>(uid ? 'pings' : null, useMemo<[string, unknown][]>(() => [['toUid', uid]], [uid]));
   const out = useCol<PingDoc>(uid ? 'pings' : null, useMemo<[string, unknown][]>(() => [['fromUid', uid]], [uid]));
   const [focus, setFocus] = useState(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('request') ?? ''));
   const toast = useToast();
   const marked = useRef(false);
 
-  const sortedNotes = useMemo(() => [...notes.data].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')).slice(0, 30), [notes.data]);
+  const sortedNotes = notes.data;
   // Opening the inbox marks what you can see as read, once.
   useEffect(() => {
-    if (!uid || notes.loading || marked.current) return;
+    if (!uid || unreadNotes.loading || marked.current) return;
     marked.current = true;
-    const unread = notes.data.filter((n) => !n.read).map((n) => n.id);
+    const unread = unreadNotes.data.map((n) => n.id);
     const t = setTimeout(() => markRead(uid, unread).catch(() => {}), 1500);
     return () => clearTimeout(t);
-  }, [uid, notes.loading, notes.data]);
+  }, [uid, unreadNotes.loading, unreadNotes.data]);
 
   if (loading || !user) return <div className="center"><Spinner /></div>;
   const me = { uid: user.uid, name: user.name, photo: user.photo };
