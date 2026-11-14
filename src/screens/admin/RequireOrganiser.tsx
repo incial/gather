@@ -15,7 +15,7 @@ export function RequireOrganiser({ children }: { children: ReactNode }) {
   const nav = useRouter();
   const pathname = usePathname();
   useEffect(() => {
-    if (!loading && !user) nav.replace(`/organiser/login?next=${encodeURIComponent(pathname)}`);
+    if (!loading && !user) nav.replace(`/login?next=${encodeURIComponent(pathname)}`);
   }, [loading, user, nav, pathname]);
   if (loading || !user) return <div className="center"><Spinner /></div>;
   if (!isOrganiser) {

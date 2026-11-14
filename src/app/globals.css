@@ -2006,3 +2006,31 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
 /* A deleted event, as only super admins see it. */
 .deleted-banner { margin: 0; padding: 10px 16px; background: #FEE4E2; color: #912018; font-size: 14px; font-weight: 600; text-align: center; }
 .org-card.is-deleted .org-card-cover { filter: grayscale(1); opacity: .7; }
+
+/* ===== One login, two modes: the Attendee / Organiser switch in every signed-in top bar ===== */
+.acct { gap: 8px; }
+.local-time { margin-right: 6px; color: var(--ink-2); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mode-switch { display: inline-flex; gap: 2px; padding: 4px; background: #fff; border-radius: 99px; box-shadow: var(--edge), inset 0 0 0 1px rgba(11, 11, 15, .06); }
+.mode-switch button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px; border: 0; border-radius: 99px; background: none; color: var(--ink-2); font-weight: 600; font-size: 14px; white-space: nowrap; transition: background .15s, color .15s; }
+.mode-switch button:hover:not(.on) { background: rgba(11, 11, 15, .05); color: var(--ink); }
+.mode-switch.is-attendee button.on { background: var(--grad); color: #fff; }
+.mode-switch.is-organiser button.on { background: var(--ink); color: #fff; }
+.mode-switch.is-organiser button.on svg { color: var(--lime); }
+.org-create { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 0; border-radius: 99px; background: var(--lime); color: var(--ink); font-weight: 650; font-size: 14.5px; text-decoration: none; white-space: nowrap; }
+.org-create:hover { filter: brightness(.96); }
+.section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.seg-sm button { min-height: 36px; font-size: 14px; padding-inline: 14px; }
+.organisers .org-note { opacity: .6; font-size: 14px; }
+@media (max-width: 960px) { .local-time { display: none; } }
+@media (max-width: 520px) {
+  /* Room for the switch on a phone: the logo shrinks to its mark (it keeps its label for screen readers). */
+  .top:has(.mode-switch) .logo, .admin-top:has(.mode-switch) .logo { font-size: 0; gap: 0; }
+  .admin-top:has(.mode-switch) .admin-title { font-size: 0; } /* a few letters of the title don't help; it stays as a spacer */
+  .mode-switch { padding: 3px; }
+  .mode-switch button { padding: 0 9px; font-size: 13px; min-height: 34px; }
+  .mode-switch button svg { display: none; }
+  .org-create { width: 40px; padding: 0; justify-content: center; flex: none; }
+  .org-create span { display: none; }
+  .acct { gap: 4px; }
+  .acct .bell { width: 36px; margin-right: 0; }
+}

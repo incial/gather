@@ -34,10 +34,11 @@ function WelcomeSplash({ name, onDone }: { name: string; onDone: () => void }) {
 
 function MyEvents() {
   const { user } = useAuth();
-  const { mode, setMode, canOrganise } = useMode();
+  const { mode } = useMode();
   const nav = useRouter();
   useEffect(() => { if (mode === 'organiser') nav.replace('/admin'); }, [mode, nav]);
   const [splash, setSplash] = useState(false);
+  const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
   const mine = useMyEvents(user!.uid);
   const first = (user!.name || 'there').replace(/^(dr|prof|mr|ms|mrs)\.?\s+/i, '').split(' ')[0];
   const [now] = useState(() => Date.now());
@@ -102,22 +103,25 @@ function MyEvents() {
           ))}
         </LiveUpdates>
 
-        <h2>My events</h2>
+        <div className="section-head">
+          <h2>My events</h2>
+          <div className="seg seg-sm" role="tablist" aria-label="Which events">
+            {(['upcoming', 'past'] as const).map((k) => (
+              <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+                {k === 'upcoming' ? 'Upcoming' : `Past${sorted.past.length ? ` (${sorted.past.length})` : ''}`}
+              </button>
+            ))}
+          </div>
+        </div>
         {mine.error ? <LoadError /> : mine.loading ? <Spinner /> : mine.data.length === 0 ? (
           <div className="empty">
             <strong>No events yet</strong>
             <div>Tap Join an event to scan its QR code or type its number, or find one in Explore.</div>
           </div>
-        ) : <>
-          {next.length > 0 ? <div className="event-grid">{next.map((m) => card(m))}</div> : !live.length && <p className="muted">Nothing coming up right now.</p>}
-          {sorted.past.length > 0 && <><h3 className="past-head">Past events</h3><div className="event-grid">{sorted.past.map((m) => card(m, true))}</div></>}
-        </>}
-
-        {canOrganise && (
-          <Link href="/organiser/login" className="home-org" onClick={(e) => { e.preventDefault(); setMode('organiser'); nav.push('/admin'); }}>
-            <span className="grow"><b>Organising an event?</b><small>Switch to organiser mode: same account, no new login</small></span>
-            <Icon name="arrow" size={18} />
-          </Link>
+        ) : tab === 'upcoming' ? (
+          next.length > 0 ? <div className="event-grid">{next.map((m) => card(m))}</div> : <p className="muted">{live.length ? 'Nothing else coming up. Your live events are above.' : 'Nothing coming up right now.'}</p>
+        ) : (
+          sorted.past.length > 0 ? <div className="event-grid">{sorted.past.map((m) => card(m, true))}</div> : <p className="muted">No past events yet.</p>
         )}
       </main>
       <GlobalNav />

@@ -12,6 +12,10 @@ const config: NextConfig = {
       { source: '/__/firebase/:path*', destination: 'https://ie-fdp-2026.firebaseapp.com/__/firebase/:path*' },
     ];
   },
+  // There is one sign-in for attendees and organisers; old organiser sign-in links (and their ?next=) still work.
+  async redirects() {
+    return [{ source: '/organiser/login', destination: '/login', permanent: true }];
+  },
   // Security headers on every response. Google sign-in uses a popup, so the opener policy allows popups;
   // the camera stays available to this site only (QR scanning), everything else it never needs is off.
   async headers() {

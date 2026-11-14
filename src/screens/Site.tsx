@@ -242,8 +242,8 @@ export function Site({ deferData = false }: { deferData?: boolean }) {
           <h1>Your event,<br />all in one place.</h1>
           <p>Find events you’ll love, join in seconds, and get everything for the day on your phone.</p>
           <div className="hero-actions">
-            <Link href="/login" className="btn btn-white"><Icon name="ticket" size={18} /> Attendee login</Link>
-            <Link href="/organiser/login" className="btn btn-glass"><Icon name="calendar" size={18} /> Organiser login</Link>
+            <Link href="/login" className="btn btn-white"><Icon name="ticket" size={18} /> Log in</Link>
+            <Link href="/join" className="btn btn-glass"><Icon name="scan" size={18} /> Join with a code</Link>
           </div>
           <Link href="/explore" className="hero-explore">or explore events without an account <Icon name="arrow" size={16} /></Link>
         </div>
@@ -295,7 +295,8 @@ export function Site({ deferData = false }: { deferData?: boolean }) {
           <span className="tile-tag">For organisers</span>
           <h2>Run the day. Keep the data.</h2>
           <p>Add events, import your registration list, run check-in on the big screen and see attendance live.</p>
-          <Link href="/organiser/login" className="btn btn-lime">Organiser login</Link>
+          <Link href="/login?next=/admin" className="btn btn-lime">Start organising</Link>
+          <small className="org-note">Same login as attending: switch to organiser mode any time.</small>
         </div>
         <ul>
           {['Attendance register with P/A for every session', 'Feedback with speaker ratings', 'Registration lists, connections and saves', 'Download any of it as CSV, or all of it at once'].map((t) => (

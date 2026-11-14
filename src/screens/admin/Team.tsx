@@ -51,7 +51,7 @@ export function Team() {
     try { const list = await copyTeam(from, event); toast(`Team copied from ${from.title}. Team: ${list.length}`); } catch (x) { toast(friendlyError(x), 'err'); }
   }
 
-  const link = typeof window !== 'undefined' ? `${window.location.origin}/organiser/login?next=${encodeURIComponent(`/admin/e/${event.id}`)}` : '';
+  const link = typeof window !== 'undefined' ? `${window.location.origin}/login?next=${encodeURIComponent(`/admin/e/${event.id}`)}` : '';
 
   return (
     <div className="narrow stack-lg">
