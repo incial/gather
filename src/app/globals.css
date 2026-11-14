@@ -2034,3 +2034,21 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
   .acct { gap: 4px; }
   .acct .bell { width: 36px; margin-right: 0; }
 }
+
+/* Desktop: the attendee menu bar floats centred at the top, in the same row as the page's top bar.
+   Give the top bar the full width so the mode switch and avatar sit clear of it on the right, and
+   keep the menu bar narrow enough to fit between them: the avatar already opens the profile, so the
+   Profile item goes, and the clock waits for wide screens. */
+@media (min-width: 960px) {
+  body:has(.global-nav) .top:has(.acct) { max-width: none; padding-inline: 24px; }
+  body:has(.top .acct, .pl-top .acct) .global-nav a[href="/profile"] { display: none; }
+  .global-nav { z-index: 25; }
+}
+@media (min-width: 960px) and (max-width: 1599px) {
+  body:has(.global-nav) .acct .local-time { display: none; }
+}
+@media (min-width: 960px) and (max-width: 1199px) {
+  /* Icons only until there's room for labels (they keep their names for screen readers). */
+  body:has(.acct) .global-nav .gn-label { display: none !important; }
+  body:has(.acct) .global-nav a { padding: 0 14px; min-width: 0; }
+}
