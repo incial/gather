@@ -46,6 +46,16 @@ export function Overview() {
     ['Saved', n(saved), 'in Explore'],
   ] as const;
 
+  // Uses the phone's share sheet where there is one, otherwise copies the link.
+  async function shareEvent() {
+    const link = vis === 'public' ? joinUrl(event.joinCode) : privateLink;
+    if (navigator.share) {
+      try { await navigator.share({ title: event.title, text: `${event.title}: join here`, url: link }); return; }
+      catch (x) { if ((x as { name?: string }).name === 'AbortError') return; }
+    }
+    navigator.clipboard.writeText(link).then(() => toast(vis === 'draft' ? 'Link copied. It opens once the event is public or private.' : 'Link copied')).catch(() => toast('Couldn’t copy the link', 'err'));
+  }
+
   async function exportAll() {
     setExporting(true);
     try { await downloadZip(await loadEventData(base)); } catch { toast('Couldn’t prepare the export. Check your connection and try again.', 'err'); }
@@ -64,6 +74,13 @@ export function Overview() {
           <button className="btn btn-ink btn-sm" onClick={exportAll} disabled={exporting}><Icon name="download" size={16} /> {exporting ? 'Preparing…' : 'Export everything'}</button>
         </div>
       </div>
+      {/* The things organisers reach for first: get people in, tell them about it, run the door, fix the details. */}
+      <nav className="quick-actions" aria-label="Quick actions">
+        <Link href={`/admin/e/${event.id}/people`}><span className="qa-ic qa-blue"><Icon name="people" size={20} /></span><b>Invite guests</b><small>Import your guest list</small></Link>
+        <button type="button" onClick={shareEvent}><span className="qa-ic qa-lime"><Icon name="external" size={20} /></span><b>Share event</b><small>{vis === 'draft' ? 'Publish it first' : 'Send the link'}</small></button>
+        <Link href={`/admin/e/${event.id}/attendance`}><span className="qa-ic qa-violet"><Icon name="scan" size={20} /></span><b>Check in</b><small>Run the door</small></Link>
+        <Link href={`/admin/e/${event.id}/details`}><span className="qa-ic qa-amber"><Icon name="feedback" size={20} /></span><b>Edit details</b><small>Time, place, cover</small></Link>
+      </nav>
       <div className="stat-row">
         {stats.map(([label, v, sub]) => <div key={label} className="stat"><span>{label}</span><b>{v}</b><small>{sub}</small></div>)}
       </div>

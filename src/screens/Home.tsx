@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AccountMenu } from '../components/AccountMenu';
+import { HostingEvents } from '../components/HostingEvents';
 import { DemoBanner, GlobalNav, Icon, LoadError, Logo, Spinner } from '../components/ui';
 import { useMode } from '../lib/mode';
 import { useAuth } from '../lib/auth';
@@ -34,7 +35,7 @@ function WelcomeSplash({ name, onDone }: { name: string; onDone: () => void }) {
 
 function MyEvents() {
   const { user } = useAuth();
-  const { mode } = useMode();
+  const { mode, canOrganise } = useMode();
   const nav = useRouter();
   useEffect(() => { if (mode === 'organiser') nav.replace('/admin'); }, [mode, nav]);
   const [splash, setSplash] = useState(false);
@@ -78,6 +79,9 @@ function MyEvents() {
       </header>
       <main className="dash-main home-main">
         <h1 className="hello">Hello, <span className="grad-text">{first}</span></h1>
+
+        {/* 0. Events you run, first, each with Check In and Manage. */}
+        {canOrganise && <HostingEvents user={user!} />}
 
         {/* 1. The two main actions, first. */}
         <div className="home-actions">
