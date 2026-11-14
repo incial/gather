@@ -43,6 +43,19 @@ service cloud.firestore {
     function rolePath(e) { return /databases/$(database)/documents/events/$(e)/roles/$(request.auth.uid); }
     function isSpeaker(e) { return signedIn() && exists(rolePath(e)) && get(rolePath(e)).data.active == true; }
     function speakerCanPulse(e) { return isSpeaker(e) && get(rolePath(e)).data.pulse == true; }
+    // A short text field: missing, or a string no longer than n. Stops oversized writes (cost and storage abuse).
+    function shortText(d, k, n) { return !(k in d) || (d[k] is string && d[k].size() <= n); }
+    // A person's own details as they write them: name, phone and where they work, each kept to a sane length.
+    function personOk(d) {
+      return shortText(d, 'name', 120) && shortText(d, 'email', 254) && shortText(d, 'phone', 40)
+        && shortText(d, 'institution', 200) && shortText(d, 'department', 200) && shortText(d, 'designation', 200)
+        && shortText(d, 'photo', 2048);
+    }
+    // Pass IDs look like ABCD-EF23 (see newRegId). A new one must have that shape; one already set never changes.
+    function regIdOk(d, before) {
+      return before != null && ('regId' in before) ? d.get('regId', '') == before.regId
+        : (!('regId' in d) || (d.regId is string && d.regId.matches('^[A-Z0-9]{4}-[A-Z0-9]{4}$')));
+    }
 
     // Legacy organiser list. Organising is open now; only the Master Admin manages this list.
     match /organisers/{email} {
@@ -205,6 +218,8 @@ service cloud.firestore {
 
     // WhatsApp message IDs, used only by the server (Admin SDK bypasses these rules).
     match /waMessages/{id} { allow read, write: if false; }
+    // Server-side rate-limit records (how many WhatsApp alerts each account triggered). Server only.
+    match /rateLimits/{id} { allow read, write: if false; }
 
     // The event's shared speaker code: looked up only by its exact value, never listed.
     match /speakerCodes/{code} {
@@ -329,6 +344,7 @@ service cloud.firestore {
           && existsAfter(/databases/$(database)/documents/events/$(e)/attendees/$(uid))
           && request.resource.data.uid == uid
           && request.resource.data.keys().hasOnly(['uid', 'name', 'institution', 'department', 'designation', 'photo', 'email', 'phone'])
+          && personOk(request.resource.data)
           && contactOk(request.resource.data);
         allow delete: if isMe(uid) || ownsEvent(e);
       }
@@ -370,6 +386,7 @@ service cloud.firestore {
           isMe(uid)
           && request.resource.data.uid == uid
           && request.resource.data.email == myEmail()
+          && personOk(request.resource.data) && regIdOk(request.resource.data, null)
           && request.resource.data.get('checkedIn', false) == false
           && (newSpeaker() || (
             (eventDoc(e).registration == 'open' || exists(/databases/$(database)/documents/events/$(e)/preregistered/$(myEmail())))
@@ -399,7 +416,7 @@ service cloud.firestore {
           && request.resource.data.source == resource.data.source
           // Attendees can't check themselves in (except by a live session scan), and their pass ID never changes once set.
           && (selfCheckIn() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['checkedIn', 'checkedInAt', 'checkInMethod', 'checkedInBy', 'checkInSession']))
-          && (!('regId' in resource.data) || request.resource.data.get('regId', '') == resource.data.regId)
+          && personOk(request.resource.data) && regIdOk(request.resource.data, resource.data)
         );
         allow delete: if ownsEvent(e);
       }
@@ -445,6 +462,8 @@ service cloud.firestore {
           isAttendee(e)
           && request.resource.data.uid == request.auth.uid
           && id == request.resource.data.sessionId + '_' + request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'sessionId', 'name', 'email', 'method', 'key', 'at'])
+          && personOk(request.resource.data)
           && request.resource.data.method == 'qr'
           && request.resource.data.at == request.time
           && keyIsLive()
@@ -454,6 +473,7 @@ service cloud.firestore {
           && request.resource.data.uid == request.auth.uid
           && id == request.resource.data.sessionId + '_' + request.auth.uid
           && request.resource.data.keys().hasOnly(['uid', 'sessionId', 'name', 'email', 'method', 'at'])
+          && personOk(request.resource.data)
           && request.resource.data.method == 'self'
           && request.resource.data.at == request.time
           && get(/databases/$(database)/documents/events/$(e)/sessions/$(request.resource.data.sessionId)).data.get('selfCheckIn', false) == true
@@ -467,6 +487,10 @@ service cloud.firestore {
           isMe(uid) && isAttendee(e)
           && eventDoc(e).feedbackOpen == true
           && request.resource.data.uid == uid
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'answers', 'speakerRatings', 'at'])
+          && personOk(request.resource.data)
+          && (!('answers' in request.resource.data) || (request.resource.data.answers is map && request.resource.data.answers.size() <= 60))
+          && (!('speakerRatings' in request.resource.data) || (request.resource.data.speakerRatings is map && request.resource.data.speakerRatings.size() <= 200))
         );
         allow delete: if ownsEvent(e);
       }
@@ -478,6 +502,8 @@ service cloud.firestore {
         allow create, update: if isAttendee(e)
           && request.resource.data.uid == request.auth.uid
           && id == request.resource.data.sessionId + '_' + request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'sessionId', 'name', 'email', 'rating', 'comment', 'at'])
+          && personOk(request.resource.data) && shortText(request.resource.data, 'comment', 1000)
           && request.resource.data.rating is int
           && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
           && get(/databases/$(database)/documents/events/$(e)/sessions/$(request.resource.data.sessionId)).data.get('feedbackOn', true) == true;
@@ -634,7 +660,9 @@ service cloud.firestore {
         allow list: if ownsEvent(e) || (signedIn() && resource.data.uid == request.auth.uid);
         allow create, update: if isAttendee(e)
           && request.resource.data.uid == request.auth.uid
-          && id == request.auth.uid + '_' + request.resource.data.speakerId;
+          && id == request.auth.uid + '_' + request.resource.data.speakerId
+          && request.resource.data.keys().hasOnly(['uid', 'speakerId', 'speakerName', 'name', 'email', 'method', 'at'])
+          && personOk(request.resource.data) && shortText(request.resource.data, 'speakerName', 120) && shortText(request.resource.data, 'method', 20);
         allow delete: if ownsEvent(e);
       }
     }

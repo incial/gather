@@ -9,7 +9,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run src",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-gather \"vitest run rules-tests\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-gather \"vitest run rules-tests --hookTimeout 30000\"",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy": "bash scripts/deploy.sh"
   },

@@ -1,7 +1,9 @@
 import 'server-only';
 import { cert, getApps, initializeApp, type App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { securityLog, redact } from './log';
+import { decide, LIMITS, type Limit } from './rateLimit';
 
 /**
  * Server side of WhatsApp alerts for Meet Pings. Everything secret stays here (Vercel environment
@@ -35,6 +37,27 @@ export async function callerUid(authHeader: string | null): Promise<string | nul
 
 type Result = { status: 'sent' | 'skipped' | 'failed'; reason?: string; messageId?: string };
 
+/**
+ * Durable per-key limit kept in Firestore (`rateLimits/{key}`, closed to every app user by the rules;
+ * only this server writes it). True if one more action is allowed, and records it.
+ */
+export async function durableLimit(firestore: Firestore, key: string, limits: Limit[]): Promise<boolean> {
+  const ref = firestore.doc(`rateLimits/${key}`);
+  return firestore.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const r = decide((snap.data()?.hits as number[] | undefined) ?? [], Date.now(), limits);
+    if (r.ok) tx.set(ref, { hits: r.next, updatedAt: FieldValue.serverTimestamp() });
+    return r.ok;
+  });
+}
+
+/**
+ * The ping document is readable by the sender, so what is stored there never says why an alert
+ * wasn't sent (that would reveal the recipient's WhatsApp settings or number). The detail goes to
+ * the server log instead, without the number.
+ */
+const ROUTE = '/api/meetping/notify';
+
 /** Sends (at most once) the WhatsApp alert for one Meet Ping, and records the outcome on the ping. */
 export async function alertForPing(pingId: string, caller: string): Promise<Result> {
   const firestore = db();
@@ -54,12 +77,23 @@ export async function alertForPing(pingId: string, caller: string): Promise<Resu
     return { status: 'failed', reason: claim.error };
   }
   const p = claim.p;
-  const record = (r: Result) => ref.update({ wa: { ...r, at: FieldValue.serverTimestamp() } }).then(() => r);
+  const record = (r: Result, detail?: string) => {
+    securityLog(`whatsapp.${r.status}`, { route: ROUTE, uid: caller, reason: detail ?? r.reason });
+    // Stored on the ping: only the outcome, never the reason detail.
+    const stored = { status: r.status, ...(r.messageId ? { messageId: r.messageId } : {}) };
+    return ref.update({ wa: { ...stored, at: FieldValue.serverTimestamp() } }).then(() => r);
+  };
+
+  // Each alert is a paid message to someone else: at most LIMITS.waPerSender per sender, across all servers.
+  if (!(await durableLimit(firestore, `wa-sender_${caller}`, LIMITS.waPerSender))) {
+    securityLog('ratelimit.account', { route: ROUTE, uid: caller, limit: 'waPerSender' });
+    return record({ status: 'skipped', reason: 'rate limited' });
+  }
 
   const prefs = (await firestore.doc(`users/${p.toUid}/profile/me`).get()).data() ?? {};
-  if (!prefs.whatsappOptIn) return record({ status: 'skipped', reason: 'not opted in' });
+  if (!prefs.whatsappOptIn) return record({ status: 'skipped' }, 'recipient not opted in');
   const to = String(prefs.whatsappPhone || prefs.phone || '').replace(/[^0-9]/g, '');
-  if (to.length < 8) return record({ status: 'skipped', reason: 'no valid number' });
+  if (to.length < 8) return record({ status: 'skipped' }, 'recipient has no valid number');
 
   try {
     const res = await fetch(`https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
@@ -74,12 +108,12 @@ export async function alertForPing(pingId: string, caller: string): Promise<Resu
       }),
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) return record({ status: 'failed', reason: String(body?.error?.message ?? res.status).slice(0, 200) });
+    if (!res.ok) return record({ status: 'failed' }, redact(body?.error?.message ?? res.status));
     const messageId = body?.messages?.[0]?.id as string | undefined;
     if (messageId) await firestore.doc(`waMessages/${messageId}`).set({ pingId, at: FieldValue.serverTimestamp() });
     return record({ status: 'sent', messageId });
   } catch (e) {
-    return record({ status: 'failed', reason: String((e as Error).message).slice(0, 200) });
+    return record({ status: 'failed' }, redact((e as Error).message));
   }
 }
 
