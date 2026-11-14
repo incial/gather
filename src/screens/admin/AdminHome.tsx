@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, type FormEvent } from 'react';
 import { CsvButton, DemoBanner, Empty, ErrorNote, Field, Logo, Modal, Spinner, useToast } from '../../components/ui';
-import { addOrganiser, createEvent, loadFdpProgramme, removeOrganiser, syncCapacityCounter } from '../../lib/api';
+import { addOrganiser, createEvent, isDeletedEvent, loadFdpProgramme, removeOrganiser, syncCapacityCounter } from '../../lib/api';
 import { AccountMenu } from '../../components/AccountMenu';
 import { useAuth } from '../../lib/auth';
 import { fmtDateTime, fmtRange, friendlyError } from '../../lib/format';
@@ -19,7 +19,7 @@ import { isEventOwner, useManagedEvents } from '../../lib/team';
 
 type Phase = 'live' | 'upcoming' | 'past';
 const phaseOf = (e: EventDoc, now: number): Phase => (Date.parse(e.endsAt) < now ? 'past' : Date.parse(e.startsAt) <= now ? 'live' : 'upcoming');
-type Filter = 'all' | Phase | 'draft';
+type Filter = 'all' | Phase | 'draft' | 'deleted';
 
 /** Top bar shared by the organiser home: Events, Pulse, Team and God view. */
 export function OrganiserTop({ active, onTeam }: { active: 'events' | 'god'; onTeam?: () => void }) {
@@ -43,7 +43,11 @@ export function AdminHome() {
   const nav = useRouter();
   // Organisers see the events they created; the Master Admin sees every event.
   // Events they created plus events they're on the team for (all events for the Master Admin).
-  const events = useManagedEvents(user, isSuper);
+  const managed = useManagedEvents(user, isSuper);
+  // Deleted events reach this list only for super admins; they sit under their own filter.
+  const deleted = useMemo(() => managed.data.filter(isDeletedEvent), [managed.data]);
+  const active = useMemo(() => managed.data.filter((e) => !isDeletedEvent(e)), [managed.data]);
+  const events = useMemo(() => ({ ...managed, data: active }), [managed, active]);
   const organisers = useCol<{ id: string; addedAt?: string }>(isSuper ? 'organisers' : null);
   const [creating, setCreating] = useState(false);
   const [team, setTeam] = useState(false);
@@ -61,11 +65,11 @@ export function AdminHome() {
   const sorted = useMemo(() => {
     // Live first, then upcoming (soonest first), then past (latest first).
     const rank = { live: 0, upcoming: 1, past: 2 };
-    return [...events.data].sort((a, b) => rank[phaseOf(a, now)] - rank[phaseOf(b, now)] || (phaseOf(a, now) === 'past' ? b.startsAt.localeCompare(a.startsAt) : a.startsAt.localeCompare(b.startsAt)));
-  }, [events.data, now]);
+    return [...(filter === 'deleted' ? deleted : events.data)].sort((a, b) => rank[phaseOf(a, now)] - rank[phaseOf(b, now)] || (phaseOf(a, now) === 'past' ? b.startsAt.localeCompare(a.startsAt) : a.startsAt.localeCompare(b.startsAt)));
+  }, [events.data, deleted, filter, now]);
   const shown = sorted.filter((e) => {
     if (q && !`${e.title} ${e.venue} ${e.organiser} ${e.joinCode}`.toLowerCase().includes(q.toLowerCase())) return false;
-    if (filter === 'all') return true;
+    if (filter === 'all' || filter === 'deleted') return true;
     if (filter === 'draft') return visibilityOf(e) === 'draft';
     return phaseOf(e, now) === filter;
   });
@@ -109,7 +113,7 @@ export function AdminHome() {
         <div className="org-toolbar">
           <label className="org-search"><Search size={17} aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events, venues or codes" aria-label="Search events" /></label>
           <div className="seg org-filter" role="tablist" aria-label="Filter events">
-            {([['all', 'All'], ['live', 'Live'], ['upcoming', 'Upcoming'], ['past', 'Past'], ['draft', 'Drafts']] as [Filter, string][]).map(([k, l]) => (
+            {([['all', 'All'], ['live', 'Live'], ['upcoming', 'Upcoming'], ['past', 'Past'], ['draft', 'Drafts'], ...(isSuper ? [['deleted', `Deleted${deleted.length ? ` (${deleted.length})` : ''}`]] : [])] as [Filter, string][]).map(([k, l]) => (
               <button key={k} role="tab" aria-selected={filter === k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>
             ))}
           </div>
@@ -117,7 +121,8 @@ export function AdminHome() {
         </div>
 
         {events.loading ? <Spinner /> : shown.length === 0 ? (
-          <Empty title={events.data.length ? 'No events match' : 'No events yet'}>{events.data.length ? 'Try another search or filter.' : 'Create your first event. It takes a couple of minutes.'}</Empty>
+          filter === 'deleted' ? <Empty title="No deleted events">Events organisers delete show here, for super admins only.</Empty>
+          : <Empty title={events.data.length ? 'No events match' : 'No events yet'}>{events.data.length ? 'Try another search or filter.' : 'Create your first event. It takes a couple of minutes.'}</Empty>
         ) : (
           <div className="org-grid">
             {shown.map((e) => <OrgEventCard key={e.id} e={e} phase={phaseOf(e, now)} />)}
@@ -138,16 +143,17 @@ function OrgEventCard({ e, phase }: { e: EventDoc; phase: Phase }) {
   const toast = useToast();
   const { user, isSuper } = useAuth();
   const mine = isSuper || isEventOwner(e, user);
+  const gone = isDeletedEvent(e);
   const vis = visibilityOf(e);
   const [deleting, setDeleting] = useState(false);
   return (
-    <article className={`org-card a-${e.color}`}>
+    <article className={`org-card a-${e.color}${gone ? ' is-deleted' : ''}`}>
       <Link href={`/admin/e/${e.id}`} className="org-card-cover" aria-label={`Manage ${e.title}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {e.bannerThumb ? <img src={e.bannerThumb} alt="" /> : <span className="org-card-initial">{e.title.slice(0, 1)}</span>}
         <div className="org-pills">
           {phase === 'live' && <span className="pill pill-live"><Radio size={12} aria-hidden="true" /> Live</span>}
-          <span className={`pill org-vis-${vis}`}>{VISIBILITY_LABEL[vis]}</span>
+          {e.deleted ? <span className="pill pill-warn">Deleted</span> : <span className={`pill org-vis-${vis}`}>{VISIBILITY_LABEL[vis]}</span>}
           {e.deleting && <span className="pill pill-warn">Delete didn’t finish</span>}
           {!mine && <span className="pill">Team</span>}
         </div>
@@ -156,14 +162,15 @@ function OrgEventCard({ e, phase }: { e: EventDoc; phase: Phase }) {
         <h3><Link href={`/admin/e/${e.id}`}>{e.title}</Link></h3>
         <p className="muted"><CalendarDays size={14} aria-hidden="true" /> {fmtRange(e.startsAt, e.endsAt)}</p>
         <p className="muted"><MapPin size={14} aria-hidden="true" /> {e.venue || '—'}</p>
+        {e.deleted && <p className="muted"><Trash2 size={14} aria-hidden="true" /> Deleted{e.deletedByEmail ? ` by ${e.deletedByEmail}` : ''}{e.deletedAt ? ` · ${fmtDateTime(e.deletedAt)}` : ''}</p>}
         <div className="org-card-actions">
           <Link className="btn btn-primary btn-sm" href={`/admin/e/${e.id}`}><Settings2 size={15} /> Manage</Link>
           <Link className="btn btn-ghost btn-sm" href={`/admin/e/${e.id}/attendance`}><ScanLine size={15} /> Check-in</Link>
           <Link className="btn btn-ghost btn-sm" href={`/admin/e/${e.id}/activities`}><Sparkles size={15} /> Activities</Link>
           <button className="btn btn-ghost btn-sm" title="Copy the private link" onClick={() => navigator.clipboard.writeText(eventUrl(e.id)).then(() => toast(vis === 'draft' ? 'Link copied. It opens once the event is public or private.' : 'Private link copied'))}><Link2 size={15} /> Link</button>
-          {mine && <button className="btn btn-ghost btn-sm danger" onClick={() => setDeleting(true)} aria-label={`Delete ${e.title}`}><Trash2 size={15} /> Delete</button>}
+          {mine && <button className="btn btn-ghost btn-sm danger" onClick={() => setDeleting(true)} aria-label={`${gone ? 'Permanently delete' : 'Delete'} ${e.title}`}><Trash2 size={15} /> {gone ? 'Delete permanently' : 'Delete'}</button>}
         </div>
-        {deleting && <DeleteEventDialog event={e} onClose={() => setDeleting(false)} onDeleted={() => setDeleting(false)} />}
+        {deleting && <DeleteEventDialog event={e} permanent={gone} onClose={() => setDeleting(false)} onDeleted={() => setDeleting(false)} />}
         <small className="muted">Code {e.joinCode} <button className="link" onClick={() => navigator.clipboard.writeText(e.joinCode).then(() => toast('Code copied'))} aria-label="Copy join code"><Copy size={12} /></button></small>
       </div>
     </article>

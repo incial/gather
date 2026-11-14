@@ -54,7 +54,7 @@ function useUpcoming(max = 8, defer = false) {
       .then((all) => {
         if (!live) return;
         const now = Date.now();
-        const data = all.filter((e) => !e.deleting && Date.parse(e.endsAt ?? e.startsAt) > now)
+        const data = all.filter((e) => !e.deleted && !e.deleting && Date.parse(e.endsAt ?? e.startsAt) > now)
           .sort((a, b) => a.startsAt.localeCompare(b.startsAt)).slice(0, max);
         set({ data, loading: false });
       })

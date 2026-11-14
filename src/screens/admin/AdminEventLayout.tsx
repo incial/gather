@@ -9,6 +9,8 @@ import type { EventDoc, EventInfoDoc, SessionDoc, SpeakerDoc } from '../../lib/t
 import { AdminCtx } from './context';
 import { AccountMenu } from '../../components/AccountMenu';
 import { useAuth } from '../../lib/auth';
+import { isDeletedEvent } from '../../lib/api';
+import { fmtDateTime } from '../../lib/format';
 import { isEventOwner, isOnTeam } from '../../lib/team';
 
 const TABS = [
@@ -30,7 +32,7 @@ export function AdminEventLayout({ children }: { children: ReactNode }) {
   const speakers = useCol<SpeakerDoc>(owns ? `${base}/speakers` : null);
 
   if (event.loading) return <div className="center"><Spinner /></div>;
-  if (!event.data) return <div className="center"><Empty title="Event not found"><Link href="/admin">Back to events</Link></Empty></div>;
+  if (!event.data || (!isSuper && isDeletedEvent(event.data))) return <div className="center"><Empty title="Event not found"><Link href="/admin">Back to events</Link></Empty></div>;
   if (!owns) return <div className="center"><Empty title="You don’t manage this event">Only its organiser and the team they added can manage it. If you’re on the team, sign in with the email they added. <Link href="/admin">Back to your events</Link></Empty></div>;
 
   return (
@@ -49,6 +51,13 @@ export function AdminEventLayout({ children }: { children: ReactNode }) {
             return <Link key={to} href={href} className={pathname === href ? 'active' : ''} aria-current={pathname === href ? 'page' : undefined}>{label}</Link>;
           })}
         </nav>
+        {isDeletedEvent(event.data) && (
+          <p className="deleted-banner" role="status">
+            {event.data.deleted
+              ? <>Deleted{event.data.deletedByEmail ? ` by ${event.data.deletedByEmail}` : ''}{event.data.deletedAt ? ` on ${fmtDateTime(event.data.deletedAt)}` : ''}. Only super admins can see this event.</>
+              : <>A permanent delete of this event didn’t finish. Only super admins can see it.</>}
+          </p>
+        )}
         <main className="admin-main">{children}</main>
       </div>
     </AdminCtx.Provider>

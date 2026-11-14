@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { CsvButton, DemoBanner, Empty, ErrorNote, Field, Spinner, useToast } from '../components/ui';
-import { addOrganiser, removeOrganiser } from '../lib/api';
+import { addOrganiser, isDeletedEvent, removeOrganiser } from '../lib/api';
+import { DeleteEventDialog } from './admin/DeleteEvent';
 import { useAuth } from '../lib/auth';
 import { backend } from '../lib/backend';
 import { fmtDateTime, fmtRange, friendlyError } from '../lib/format';
@@ -79,32 +80,44 @@ function PlatformStats() {
 function AllEvents() {
   const events = useCol<EventDoc>('events');
   const [q, setQ] = useState('');
-  const list = useMemo(() => [...events.data].sort((a, b) => b.startsAt.localeCompare(a.startsAt)).filter((e) => !q || `${e.title} ${e.organiser} ${e.venue}`.toLowerCase().includes(q.toLowerCase())), [events.data, q]);
-  const sheet = { name: 'all-events', columns: ['Title', 'Organiser', 'Venue', 'Starts', 'Ends', 'Visibility', 'Join code', 'Link'], rows: list.map((e) => ({ Title: e.title, Organiser: e.organiser, Venue: e.venue, Starts: fmtDateTime(e.startsAt), Ends: fmtDateTime(e.endsAt), Visibility: VISIBILITY_LABEL[visibilityOf(e)], 'Join code': e.joinCode, Link: eventUrl(e.id) })) };
+  const [show, setShow] = useState<'active' | 'deleted'>('active');
+  const nDeleted = events.data.filter(isDeletedEvent).length;
+  const list = useMemo(() => [...events.data].filter((e) => isDeletedEvent(e) === (show === 'deleted')).sort((a, b) => b.startsAt.localeCompare(a.startsAt)).filter((e) => !q || `${e.title} ${e.organiser} ${e.venue}`.toLowerCase().includes(q.toLowerCase())), [events.data, q, show]);
+  const sheet = { name: show === 'deleted' ? 'deleted-events' : 'all-events', columns: ['Title', 'Organiser', 'Venue', 'Starts', 'Ends', 'Visibility', 'Join code', 'Link', 'Deleted by', 'Deleted at'], rows: list.map((e) => ({ Title: e.title, Organiser: e.organiser, Venue: e.venue, Starts: fmtDateTime(e.startsAt), Ends: fmtDateTime(e.endsAt), Visibility: e.deleted ? 'Deleted' : VISIBILITY_LABEL[visibilityOf(e)], 'Join code': e.joinCode, Link: eventUrl(e.id), 'Deleted by': e.deletedByEmail ?? '', 'Deleted at': fmtDateTime(e.deletedAt) })) };
   if (events.loading) return <Spinner />;
   return (
     <section className="stack">
       <div className="row-between"><input className="god-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events" aria-label="Search events" /><CsvButton sheet={sheet} prefix="gather" /></div>
+      <div className="seg" role="tablist" aria-label="Which events">
+        <button role="tab" aria-selected={show === 'active'} className={show === 'active' ? 'on' : ''} onClick={() => setShow('active')}>Active</button>
+        <button role="tab" aria-selected={show === 'deleted'} className={show === 'deleted' ? 'on' : ''} onClick={() => setShow('deleted')}>Deleted{nDeleted ? ` (${nDeleted})` : ''}</button>
+      </div>
       <div className="table-wrap">
         <table className="table">
           <thead><tr><th>Event</th><th>When</th><th>Visibility</th><th>Joined</th><th></th></tr></thead>
           <tbody>{list.map((e) => <EventRow key={e.id} e={e} />)}</tbody>
         </table>
       </div>
-      {!list.length && <Empty title="No events">Nothing matches.</Empty>}
+      {!list.length && <Empty title={show === 'deleted' ? 'No deleted events' : 'No events'}>{show === 'deleted' ? 'Events organisers delete are kept here, visible only to super admins.' : 'Nothing matches.'}</Empty>}
     </section>
   );
 }
 
 function EventRow({ e }: { e: EventDoc }) {
   const joined = useCount(`events/${e.id}/attendees`);
+  const [purging, setPurging] = useState(false);
+  const gone = isDeletedEvent(e);
   return (
     <tr>
-      <td><b>{e.title}</b><br /><small className="muted">{e.organiser || '—'} · {e.venue}</small></td>
+      <td><b>{e.title}</b><br /><small className="muted">{e.organiser || '—'} · {e.venue}</small>
+        {e.deleted && <><br /><small className="muted">Deleted{e.deletedByEmail ? ` by ${e.deletedByEmail}` : ''}{e.deletedAt ? ` · ${fmtDateTime(e.deletedAt)}` : ''}</small></>}</td>
       <td><small>{fmtRange(e.startsAt, e.endsAt)}</small></td>
-      <td><span className={`pill org-vis-${visibilityOf(e)}`}>{VISIBILITY_LABEL[visibilityOf(e)]}</span></td>
+      <td>{gone ? <span className="pill pill-warn">{e.deleted ? 'Deleted' : 'Delete didn’t finish'}</span> : <span className={`pill org-vis-${visibilityOf(e)}`}>{VISIBILITY_LABEL[visibilityOf(e)]}</span>}</td>
       <td>{joined.n ?? '…'}</td>
-      <td className="god-actions"><Link className="btn btn-ghost btn-sm" href={`/admin/e/${e.id}`}><Settings2 size={14} /> Manage</Link><Link className="icon-btn" href={`/e/${e.id}`} target="_blank" aria-label="Open attendee view"><ExternalLink size={15} /></Link></td>
+      <td className="god-actions"><Link className="btn btn-ghost btn-sm" href={`/admin/e/${e.id}`}><Settings2 size={14} /> {gone ? 'View' : 'Manage'}</Link>
+        {gone ? <button className="icon-btn" onClick={() => setPurging(true)} aria-label={`Permanently delete ${e.title}`}><Trash2 size={15} /></button>
+          : <Link className="icon-btn" href={`/e/${e.id}`} target="_blank" aria-label="Open attendee view"><ExternalLink size={15} /></Link>}
+        {purging && <DeleteEventDialog event={e} permanent onClose={() => setPurging(false)} onDeleted={() => setPurging(false)} />}</td>
     </tr>
   );
 }

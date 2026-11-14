@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Avatar, confetti, Empty, GlobalNav, Icon, Spinner, useToast } from '../components/ui';
-import { forgetDeletedEvents, quickJoin } from '../lib/api';
+import { forgetDeletedEvents, isDeletedEvent, quickJoin } from '../lib/api';
 import { EVENT_TYPES, TYPE_ORDER, typeInfo, type EventType } from '../lib/eventTypes';
 import { swipe, useSwipes } from '../lib/saved';
 import { useAuth } from '../lib/auth';
@@ -124,7 +124,10 @@ export function Explore() {
   const { user, loading } = useAuth();
   const nav = useRouter();
   const toast = useToast();
-  const published = useOnce<EventDoc>('events', [['published', true]], 60);
+  const listed = useOnce<EventDoc>('events', [['published', true]], 60);
+  // Deleted events never show (the rules already hide soft-deleted ones; this also covers an unfinished permanent delete).
+  const listedData = useMemo(() => listed.data.filter((e) => !isDeletedEvent(e)), [listed.data]);
+  const published = { ...listed, data: listedData };
   const swipes = useSwipes(user?.uid);
   const mine = useMyEvents(user?.uid);
   const savedIcon = useRef<HTMLAnchorElement>(null);

@@ -79,6 +79,37 @@ describe('deleting an event', () => {
     for (const p of ['users/ben/notifications/e1_asha_ben', 'users/asha/notifications/e1_asha_ben_ok', 'users/asha/events/e1', 'users/asha/speaking/e1', 'users/asha/swipes/e1', 'speakerCodes/ABCDE23456', 'speakerPins/e1', 'pings/e1_asha_ben', 'certificates/c1', `${E}/attendees/asha`, `${E}/saved/asha`, E]) b.delete(doc(db, p));
     await assertSucceeds(b.commit());
   });
+  it('soft delete: the owner removes people’s copies, then hands the event to nobody; only super admins still see it', async () => {
+    const { assertFails } = await import('@firebase/rules-unit-testing');
+    const db = org();
+    // People's copies and certificates, while still the owner (the way the app does it).
+    const b = writeBatch(db);
+    for (const p of ['users/asha/events/e1', 'users/asha/speaking/e1', 'users/asha/swipes/e1']) b.delete(doc(db, p));
+    b.set(doc(db, 'certificates/c1'), { eventDeleted: true }, { merge: true });
+    await assertSucceeds(b.commit());
+    const mark = { deleted: true, deletedAt: '2026-11-14T10:00:00.000Z', deletedByEmail: 'boss@org.test', deletedFrom: { ownerUid: 'org', teamEmails: [], published: true, linkAccess: false }, ownerUid: '', teamEmails: [], published: false, linkAccess: false };
+    // Handing it to nobody while leaving it published is refused.
+    await assertFails(setDoc(doc(db, E), { ...mark, published: true }, { merge: true }));
+    await assertSucceeds(setDoc(doc(db, E), mark, { merge: true }));
+    // Gone for the owner, attendees and the public…
+    await assertFails(getDoc(doc(org(), E)));
+    expect((await assertSucceeds(getDocs(query(collection(org(), 'events'), where('ownerUid', '==', 'org'))))).size).toBe(0);
+    const asha = env.authenticatedContext('asha', { email: 'asha@x.test', email_verified: true }).firestore();
+    await assertFails(getDoc(doc(asha, E)));
+    await assertFails(getDocs(collection(asha, `${E}/sessions`)));
+    await assertFails(setDoc(doc(org(), E), { published: true }, { merge: true }));
+    // …but a super admin still reads it.
+    const master = env.authenticatedContext('m', { email: 'toincial@gmail.com', email_verified: true }).firestore();
+    await assertSucceeds(getDoc(doc(master, E)));
+  });
+  it('a co-organiser can’t soft-delete, and nobody can soft-delete an event they don’t own', async () => {
+    const { assertFails } = await import('@firebase/rules-unit-testing');
+    await seed((raw) => setDoc(doc(raw, E), { teamEmails: ['mate@org.test'] }, { merge: true }));
+    const mate = env.authenticatedContext('mate', { email: 'mate@org.test', email_verified: true }).firestore();
+    const mark = (uid: string) => ({ deleted: true, deletedFrom: { ownerUid: uid, teamEmails: [], published: true, linkAccess: false }, ownerUid: '', teamEmails: [], published: false, linkAccess: false });
+    await assertFails(setDoc(doc(mate, E), mark('mate'), { merge: true }));
+    await assertFails(setDoc(doc(mate, E), mark('org'), { merge: true }));
+  });
   it('notifications can only be removed for an event that is being deleted', async () => {
     const db = org();
     const { assertFails } = await import('@firebase/rules-unit-testing');

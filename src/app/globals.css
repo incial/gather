@@ -2002,3 +2002,7 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
 .small { font-size: 13px; margin: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .k-checkin .lu-ic { background: #E7DFFF; color: #5A2BFF; }
+
+/* A deleted event, as only super admins see it. */
+.deleted-banner { margin: 0; padding: 10px 16px; background: #FEE4E2; color: #912018; font-size: 14px; font-weight: 600; text-align: center; }
+.org-card.is-deleted .org-card-cover { filter: grayscale(1); opacity: .7; }

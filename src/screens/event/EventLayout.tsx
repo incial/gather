@@ -4,6 +4,7 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { Avatar, DemoBanner, Empty, Icon, LoadError, Logo, Spinner, useToast } from '../../components/ui';
+import { isDeletedEvent } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useCol, useDoc } from '../../lib/live';
 import { backend } from '../../lib/backend';
@@ -35,9 +36,12 @@ const SIDE = [
 export function EventLayout({ children }: { children: ReactNode }) {
   const { id } = useParams<{ id: string }>();
   const pathname = usePathname();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isSuper } = useAuth();
   const base = `events/${id}`;
-  const event = useDoc<EventDoc>(base);
+  const live = useDoc<EventDoc>(base);
+  // A deleted event reads as missing for everyone but super admins.
+  const hide = !isSuper && isDeletedEvent(live.data);
+  const event = hide ? { ...live, data: null } : live;
   const me = useDoc<AttendeeDoc>(user ? `${base}/attendees/${user.uid}` : null);
   const joined = !!me.data;
   const mine: [string, unknown][] = useMemo(() => [['uid', user?.uid]], [user?.uid]);

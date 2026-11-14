@@ -46,8 +46,14 @@ export interface EventDoc {
   /** Co-organisers (lower-case Google emails). They manage the event like the owner, except the team itself,
    * handing the event over, and deleting it. Up to 15. */
   teamEmails?: string[];
-  /** Set while the event is being deleted (stays set if a delete was interrupted). */
+  /** Set while the event is being permanently deleted (stays set if that was interrupted). */
   deleting?: boolean;
+  /** Soft delete: the organiser deleted it. It is gone for everyone except super admins, who still see it. */
+  deleted?: boolean;
+  deletedAt?: string;
+  deletedByEmail?: string;
+  /** Who owned it and how it was shared before it was deleted (ownership and sharing are cleared on delete). */
+  deletedFrom?: { ownerUid: string; teamEmails: string[]; published: boolean; linkAccess: boolean };
   /** Workshop, conference, hackathon… Older events have none. */
   eventType?: EventType;
   /** Answers to the questions for this event type (see eventTypes.ts). */
@@ -93,6 +99,8 @@ export interface CertificateDoc {
   dates: string;
   venue: string;
   signers: { name: string; title: string }[];
+  /** The event was deleted: hidden from the person's profile (the verification link still works). */
+  eventDeleted?: boolean;
   issuedAt?: string;
 }
 

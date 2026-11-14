@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import type { EventInfoDoc, HelpContact } from '../../lib/types';
 import { cleanContacts, contactsOf, MAX_CONTACTS } from '../../lib/helpdesk';
 import { Minus, Plus, Star } from 'lucide-react';
-import { syncCapacityCounter } from '../../lib/api';
+import { isDeletedEvent, syncCapacityCounter } from '../../lib/api';
 import { useState, type FormEvent } from 'react';
 import { ErrorNote, Field, useToast } from '../../components/ui';
 import { saveEventInfo, updateEvent } from '../../lib/api';
@@ -28,9 +28,9 @@ export function Details() {
       <EventInfoForm key={info ? 'loaded' : 'empty'} eventId={event.id} info={info} />
       {isOwner && <section className="panel">
         <h2>Delete event</h2>
-        <p className="muted">Permanently removes the event and all its data.</p>
-        <button className="btn btn-ghost btn-sm danger" onClick={() => setDeleting(true)}>Delete event</button>
-        {deleting && <DeleteEventDialog event={event} onClose={() => setDeleting(false)} onDeleted={() => nav.replace('/admin')} />}
+        <p className="muted">{isDeletedEvent(event) ? 'Already deleted. Erase it and all its data for good (super admins only).' : 'Removes the event for everyone: attendees, speakers, you and your team.'}</p>
+        <button className="btn btn-ghost btn-sm danger" onClick={() => setDeleting(true)}>{isDeletedEvent(event) ? 'Delete permanently' : 'Delete event'}</button>
+        {deleting && <DeleteEventDialog event={event} permanent={isDeletedEvent(event)} onClose={() => setDeleting(false)} onDeleted={() => nav.replace('/admin')} />}
       </section>}
     </div>
   );

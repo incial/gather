@@ -111,7 +111,7 @@ export function Profile() {
           <Link href="/people"><span className="prof-ic c-violet"><Users size={18} aria-hidden="true" /></span><span className="grow"><b>My people</b><small>Connections and Meet Ping requests</small></span>{pings.incoming.length > 0 && <span className="count-badge">{pings.incoming.length}</span>}<ChevronRight size={18} aria-hidden="true" /></Link>
           <Link href="/saved"><span className="prof-ic c-amber"><Bookmark size={18} aria-hidden="true" /></span><span className="grow"><b>Saved events</b><small>{saved ? `${saved} saved` : 'Events you saved in Explore'}</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
           <Link href="/speaker"><span className="prof-ic c-blue"><Mic size={18} aria-hidden="true" /></span><span className="grow"><b>Speaker area</b><small>Enter your event’s speaker code, see feedback, run Pulse</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
-          {certs.data.map((c) => (
+          {certs.data.filter((c) => !c.eventDeleted).map((c) => (
             <Link key={c.id} href={`/verify/${c.id}`}><span className="prof-ic c-lime"><BadgeCheck size={18} aria-hidden="true" /></span><span className="grow"><b>{c.eventTitle}</b><small>Certificate · {c.title}</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
           ))}
         </nav>

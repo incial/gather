@@ -22,7 +22,7 @@ const strip = <T extends { id: string }>({ id: _id, ...rest }: T) => rest as unk
 /* ---------- Joining ---------- */
 
 export const findEventByCode = async (code: string) =>
-  (await backend.getCol<EventDoc>('events', [['joinCode', code.trim()], ['published', true]]))[0] ?? null;
+  (await backend.getCol<EventDoc>('events', [['joinCode', code.trim()], ['published', true]])).find((e) => !isDeletedEvent(e)) ?? null;
 
 /** Six digits, never starting with 0 so spreadsheets and phones keep all six. */
 function randomJoinCode() {
@@ -203,11 +203,44 @@ export async function loadFdpProgramme(owner: AppUser) {
 export const updateEvent = (id: string, patch: Partial<EventDoc>) =>
   backend.write([{ type: 'set', path: `events/${id}`, data: patch as Record<string, unknown>, merge: true }]);
 
+/** A deleted event (soft delete, or a permanent delete that didn't finish). Only super admins ever see these. */
+export const isDeletedEvent = (e: Pick<EventDoc, 'deleted' | 'deleting'> | null | undefined) => !!(e?.deleted || e?.deleting);
+
 /**
- * Hard delete: the event, everything under it, its certificates and Pulse activities, and each
- * attendee's copy in My events and Explore saves, so it disappears for everyone straight away.
+ * Soft delete, what an organiser's Delete does. The event and its data stay in the database for super
+ * admins, but it disappears for everyone else straight away: each attendee's and speaker's copy in
+ * My events, Activity and Explore saves is removed, its certificates leave people's profiles, and the
+ * event itself is unpublished and taken off its owner and team, so the security rules let only super
+ * admins read it.
  */
-export async function deleteEvent(id: string, onStep?: (s: string) => void) {
+export async function deleteEvent(ev: EventDoc, by: AppUser | null, onStep?: (s: string) => void) {
+  const id = ev.id;
+  onStep?.('Finding who joined or saved it…');
+  // People's copies first, while this account still owns the event (the rules check that).
+  const [joined, savers, roles, certs] = await Promise.all([
+    backend.getCol<{ id: string }>(`events/${id}/attendees`),
+    backend.getCol<{ id: string }>(`events/${id}/saved`),
+    backend.getCol<{ id: string }>(`events/${id}/roles`).catch(() => []),
+    backend.getCol<{ id: string }>('certificates', [['eventId', id]]).catch(() => []),
+  ]);
+  const ops: WriteOp[] = [];
+  for (const uid of new Set([...joined, ...roles].map((a) => a.id))) ops.push({ type: 'delete', path: `users/${uid}/events/${id}` }, { type: 'delete', path: `users/${uid}/speaking/${id}` });
+  for (const uid of new Set([...joined, ...savers].map((x) => x.id))) ops.push({ type: 'delete', path: `users/${uid}/swipes/${id}` });
+  ops.push(...certs.map((c) => ({ type: 'set' as const, path: `certificates/${c.id}`, merge: true, data: { eventDeleted: true } })));
+  onStep?.('Removing it for everyone…');
+  if (ops.length) await backend.write(ops);
+  await backend.write([{ type: 'set', path: `events/${id}`, merge: true, data: {
+    deleted: true, deletedAt: new Date().toISOString(), deletedByEmail: by?.email ?? '',
+    deletedFrom: { ownerUid: ev.ownerUid ?? '', teamEmails: ev.teamEmails ?? [], published: !!ev.published, linkAccess: !!ev.linkAccess },
+    ownerUid: '', teamEmails: [], published: false, linkAccess: false,
+  } }]);
+}
+
+/**
+ * Permanent delete, for super admins only: the event, everything under it, its certificates and Pulse
+ * activities, and each attendee's copy in My events and Explore saves.
+ */
+export async function purgeEvent(id: string, onStep?: (s: string) => void) {
   const subs = ['sessions', 'speakers', 'sessionKeys', 'preregistered', 'attendees', 'directory', 'private', 'attendance', 'feedback', 'connections', 'saved', 'sessionFeedback', 'assets', 'assetFiles', 'certIndex', 'media', 'roles', 'speakerFeedback', 'speakerFeedbackOwners', 'counters', 'announcements', 'checkinLog', 'speakerTries'];
   const ops: WriteOp[] = [];
   // Marks the event as being deleted, which also lets its check-in history be removed.

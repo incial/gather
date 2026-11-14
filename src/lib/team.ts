@@ -48,7 +48,8 @@ export function useManagedEvents(user: AppUser | null, isSuper: boolean) {
   const team = useCol<EventDoc>(user && email && !isSuper ? 'events' : null, useMemo<[string, unknown][]>(() => [['teamEmails[]', email]], [email]));
   return useMemo(() => {
     const seen = new Set<string>();
-    const data = [...own.data, ...team.data].filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)));
+    // Deleted events (soft-deleted, or a permanent delete that didn't finish) show only to super admins.
+    const data = [...own.data, ...team.data].filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), isSuper || !(e.deleted || e.deleting))));
     return { data, loading: own.loading || (!!email && !isSuper && team.loading), error: own.error };
   }, [own.data, team.data, own.loading, team.loading, own.error, email, isSuper]);
 }

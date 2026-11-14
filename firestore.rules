@@ -235,7 +235,8 @@ service cloud.firestore {
 
     match /events/{e} {
       // Private events (linkAccess) open with their link but are never listed.
-      // A deleted event reads as missing (not as an error), so apps can tidy up.
+      // A permanently deleted event reads as missing (not as an error), so apps can tidy up.
+      // A soft-deleted event has no owner or team and is unpublished, so only super admins can read it.
       allow get: if resource == null || resource.data.published == true || resource.data.get('linkAccess', false) == true
         || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid) || onTeam(resource.data) || isSuper();
       allow list: if resource.data.published == true || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid) || onTeam(resource.data) || isSuper();
@@ -247,7 +248,17 @@ service cloud.firestore {
         || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid
           && request.resource.data.get('ownerUid', '') == request.auth.uid)
         || (onTeam(resource.data)
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerUid', 'ownerEmail', 'teamEmails'])));
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerUid', 'ownerEmail', 'teamEmails']))
+        // Soft delete by the owner: the event is unpublished and handed to nobody, so from then on
+        // only super admins can read it (see get/list above). Who owned it is kept in deletedFrom.
+        || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid && softDeleted(request.resource.data)));
+      function softDeleted(d) {
+        return d.get('deleted', false) == true
+          && d.get('ownerUid', 'x') == '' && d.get('teamEmails', ['x']).size() == 0
+          && d.get('published', true) == false && d.get('linkAccess', true) == false
+          && d.get('deletedFrom', null) is map && d.deletedFrom.get('ownerUid', '') == request.auth.uid;
+      }
+      // Permanent delete: super admins (and owners, for older copies of the app).
       allow delete: if isSuper() || (signedIn() && resource.data.get('ownerUid', '') == request.auth.uid);
 
       match /sessions/{s} {
