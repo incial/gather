@@ -184,6 +184,23 @@ export async function fillAccountPhoto(user: AppUser, eventId: string, speakerId
   await backend.write([{ type: 'set', path: `events/${eventId}/speakers/${speakerId}`, merge: true, data: { photo } }]).catch(() => {});
 }
 
+/**
+ * A speaker role given by the organiser ("Make speaker") is mirrored onto the person's own account the first
+ * time their app sees it, so the event shows in their Speaker area (only the account itself can write there).
+ * Does nothing if it's already there. Also fills their speaker photo from the account, like the other ways in.
+ */
+export async function ensureSpeakingMirror(user: AppUser, ev: Pick<EventDoc, 'id' | 'title' | 'startsAt'>, role: Pick<RoleDoc, 'active' | 'speakerId' | 'pulse' | 'name'>) {
+  if (!role.active || !role.speakerId) return;
+  const path = `users/${user.uid}/speaking/${ev.id}`;
+  if (!(await backend.getDoc(path).catch(() => null))) {
+    const sp = await backend.getDoc<SpeakerDoc>(`events/${ev.id}/speakers/${role.speakerId}`).catch(() => null);
+    await backend.write([{ type: 'set', path, data: {
+      eventId: ev.id, speakerId: role.speakerId, speakerName: sp?.name || role.name || user.name, eventTitle: ev.title, startsAt: ev.startsAt, pulse: !!role.pulse,
+    } }]);
+  }
+  await fillAccountPhoto(user, ev.id, role.speakerId);
+}
+
 /* ---------- Matching organiser-listed speakers to accounts by verified email ---------- */
 
 /**

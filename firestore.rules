@@ -610,9 +610,22 @@ service cloud.firestore {
             && data.pulse == c.pulse
             && sp.get('uid', '') == request.auth.uid;
         }
+        // Made a speaker by the event's organiser ("Make speaker"): only someone registered at this event, and
+        // only with a speaker entry linked to that same account (written in the same batch).
+        function organiserOk() {
+          let data = request.resource.data;
+          let sp = getAfter(/databases/$(database)/documents/events/$(e)/speakers/$(data.speakerId)).data;
+          return ownsEvent(e)
+            && data.keys().hasOnly(['uid', 'name', 'email', 'roles', 'speakerId', 'status', 'active', 'pulse', 'code', 'at'])
+            && data.uid == uid && data.roles == ['speaker'] && data.status == 'verified' && data.active == true
+            && data.at == request.time && data.code == 'ORGANISER' && data.pulse == true
+            && data.name is string && data.name.size() <= 80 && data.email is string && data.email.size() <= 254
+            && exists(/databases/$(database)/documents/events/$(e)/attendees/$(uid))
+            && sp.get('uid', '') == uid;
+        }
         allow get: if isMe(uid) || ownsEvent(e);
         allow list, delete: if ownsEvent(e);
-        allow create: if pinOk() || codeOk() || emailOk();
+        allow create: if pinOk() || codeOk() || emailOk() || organiserOk();
         // One speaker entry per person per event: the role can only be re-made after it was removed,
         // and then only with the speaker code (an organiser's removal isn't undone by email matching).
         allow update: if ownsEvent(e) || (resource.data.get('active', false) == false && (pinOk() || codeOk()));

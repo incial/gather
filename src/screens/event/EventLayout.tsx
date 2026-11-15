@@ -9,7 +9,7 @@ import { useAuth } from '../../lib/auth';
 import { useCol, useDoc } from '../../lib/live';
 import { backend } from '../../lib/backend';
 import type { AttendanceDoc, AttendeeDoc, ConnectionDoc, EventDoc, EventInfoDoc, FeedbackDoc, RoleDoc, SessionDoc, SessionFeedbackDoc, SpeakerDoc } from '../../lib/types';
-import { claimByEmail, findMyAssignment, sortSpeakers } from '../../lib/speakers';
+import { claimByEmail, ensureSpeakingMirror, findMyAssignment, sortSpeakers } from '../../lib/speakers';
 import { EventCtx } from './context';
 import { FeedbackPrompt } from './FeedbackPrompt';
 import { Landing } from './Landing';
@@ -82,6 +82,15 @@ export function EventLayout({ children }: { children: ReactNode }) {
       if (r.ok) toast(`You’re linked as speaker “${sp.name}” for ${ev.title}`);
     }).catch(() => {});
   }, [user, joined, role.loading, hadRole, event.data, id, toast]);
+
+  // Made a speaker by the organiser? Put the event in this account's Speaker area (once per session).
+  const activeRole = role.data?.active ? role.data : null;
+  useEffect(() => {
+    if (!user || !joined || !activeRole || !event.data) return;
+    const key = `gather-sp-mirror-${id}-${user.uid}`;
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch { /* private mode: check anyway */ }
+    ensureSpeakingMirror(user, event.data, activeRole).catch(() => {});
+  }, [user, joined, activeRole, event.data, id]);
 
   if (authLoading || event.loading || me.loading) return <div className="center"><Spinner /></div>;
   if (event.error && !event.data && navigator.onLine === false) return <div className="center"><LoadError /></div>;

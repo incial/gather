@@ -4,8 +4,8 @@ import { useEffect } from 'react';
 import { useAuth } from '../lib/auth';
 import { backend } from '../lib/backend';
 import { dueEvery } from '../lib/once';
-import { claimByEmail, findMyAssignment, fillAccountPhoto } from '../lib/speakers';
-import type { SpeakingDoc } from '../lib/types';
+import { claimByEmail, ensureSpeakingMirror, findMyAssignment, fillAccountPhoto } from '../lib/speakers';
+import type { EventDoc, MembershipDoc, RoleDoc, SpeakingDoc } from '../lib/types';
 import { getUpcomingEvents } from '../lib/upcoming';
 import { useToast } from './ui';
 
@@ -37,10 +37,20 @@ export function SpeakerAutoLink() {
         const sp = await findMyAssignment(user, ev.id);
         if (!sp || sp.uid) continue; // not listed, or already linked to this account
         const r = await claimByEmail(user, ev, sp);
-        if (r.ok && live) toast(`You’re a speaker at ${ev.title}. It’s in your Speaker area.`);
+        if (r.ok) { already.add(ev.id); if (live) toast(`You’re a speaker at ${ev.title}. It’s in your Speaker area.`); }
       }
       // Speakers linked earlier without a photo: use the account photo, so every speaker card shows it.
       for (const s of speaking) { if (!live) return; await fillAccountPhoto(user, s.eventId, s.speakerId); }
+      // Made a speaker by an organiser at an event they joined: add it to their Speaker area.
+      const joinedEvents = await backend.getCol<MembershipDoc>(`users/${user.uid}/events`).catch(() => [] as MembershipDoc[]);
+      for (const m of joinedEvents) {
+        if (!live) return;
+        if (already.has(m.id)) continue;
+        const role = await backend.getDoc<RoleDoc>(`events/${m.id}/roles/${user.uid}`).catch(() => null);
+        if (!role?.active) continue;
+        const ev = await backend.getDoc<EventDoc>(`events/${m.id}`).catch(() => null);
+        if (ev) { await ensureSpeakingMirror(user, ev, role); if (live) toast(`You’re a speaker at ${ev.title}. It’s in your Speaker area.`); }
+      }
     })().catch(() => { /* not critical: tried again on the next check */ });
     return () => { live = false; };
     // Runs once per signed-in account (and at most every few hours on a device).

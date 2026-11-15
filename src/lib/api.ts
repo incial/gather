@@ -9,7 +9,7 @@ import { DEFAULT_QUESTIONS } from './questions';
 import { normName, splitSpeaker } from './scheduleParse';
 import type {
   AppUser, AttendeeDoc, ConnectionDoc, EventDoc, EventInfoDoc, FeedbackDoc, MembershipDoc, PreregDoc, SessionKind,
-  SessionDoc, SpeakerDoc, SwipeDoc,
+  RoleDoc, SessionDoc, SpeakerDoc, SwipeDoc,
 } from './types';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I, easier to read aloud
@@ -304,6 +304,38 @@ export async function saveSpeaker(eventId: string, s: SpeakerDoc, all: SpeakerDo
     { type: 'set', path: `events/${eventId}`, data: { lineup: lineupOf(sortSpeakers(next)) }, merge: true },
   ]);
 }
+/**
+ * Organiser assignment: makes an attendee a speaker at this event, on their existing account.
+ * It is the third way to become a speaker, beside the pre-registered email and the four-digit code, and
+ * shares the same records: if a speaker entry is already linked to them, or listed with their email and not
+ * linked to anyone, that entry is used (never a duplicate); otherwise one is made from their attendee details.
+ * The speaker role is given (or re-activated, if an organiser removed it before), so access is immediate.
+ * Their attendee registration is left exactly as it is.
+ */
+export async function promoteToSpeaker(ev: Pick<EventDoc, 'id'>, a: AttendeeDoc, all: SpeakerDoc[], role: RoleDoc | null) {
+  if (role?.active) return;
+  const email = (a.email ?? '').trim().toLowerCase();
+  const existing = all.find((s) => s.uid === a.uid)
+    ?? all.find((s) => !s.uid && !!email && (s.emailLower || (s.email ?? '').toLowerCase()) === email);
+  const id = existing?.id ?? backend.newId();
+  const photo = a.photo && /^https:\/\//.test(a.photo) ? a.photo : '';
+  const speaker: SpeakerDoc = existing ? { ...existing, uid: a.uid } : {
+    id, name: a.name, role: a.designation || '', organisation: a.institution || '', topic: '', expertise: '', bio: '',
+    // Contact details stay private (shared only by the speaker); the email is kept only so they can be recognised.
+    email: '', phone: '', linkedin: '', website: '', links: [], photo, uid: a.uid, category: 'regular', order: 1_000_000 + all.length,
+  };
+  const next = existing ? all.map((s) => (s.id === id ? speaker : s)) : [...all, speaker];
+  await backend.write([
+    existing
+      ? { type: 'set', path: `events/${ev.id}/speakers/${id}`, merge: true, data: { uid: a.uid } }
+      : { type: 'set', path: `events/${ev.id}/speakers/${id}`, data: { ...strip(speaker), emailLower: email } },
+    { type: 'set', path: `events/${ev.id}/roles/${a.uid}`, data: {
+      uid: a.uid, name: a.name.slice(0, 80), email, roles: ['speaker'], speakerId: id, status: 'verified', active: true, pulse: true, code: 'ORGANISER', at: backend.now(),
+    } },
+    { type: 'set', path: `events/${ev.id}`, data: { lineup: lineupOf(sortSpeakers(next)) }, merge: true },
+  ]);
+}
+
 export async function deleteSpeaker(eventId: string, id: string, all: SpeakerDoc[]) {
   await backend.write([
     { type: 'delete', path: `events/${eventId}/speakers/${id}` },

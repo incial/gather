@@ -2,11 +2,12 @@
 
 import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Avatar, CsvButton, Empty, ErrorNote, Icon, Modal, useToast } from '../../components/ui';
-import { deletePrereg, importPrereg, removeAttendee } from '../../lib/api';
+import { deletePrereg, importPrereg, promoteToSpeaker, removeAttendee } from '../../lib/api';
+import { useCol } from '../../lib/live';
 import { downloadCsv, parseCsv } from '../../lib/csv';
 import { attendeesSheet } from '../../lib/exports';
 import { friendlyError } from '../../lib/format';
-import type { PreregDoc } from '../../lib/types';
+import type { AttendeeDoc, PreregDoc, RoleDoc } from '../../lib/types';
 import { loadEventData, useAdmin, useAdminCol } from './context';
 
 const pickFirst = (r: Record<string, string>, ...keys: string[]) => keys.map((k) => r[k]).find((v) => v) ?? '';
@@ -32,6 +33,17 @@ export function People() {
   const { event, prefix } = base;
   const attendees = useAdminCol('attendees').data;
   const prereg = useAdminCol('preregistered').data;
+  // Speaker roles at this event (who is already a speaker, and anyone an organiser removed earlier).
+  const roles = useCol<RoleDoc>(`events/${event.id}/roles`).data;
+  const roleOf = useMemo(() => new Map(roles.map((r) => [r.uid, r])), [roles]);
+  const [promoting, setPromoting] = useState('');
+  async function makeSpeaker(a: AttendeeDoc) {
+    if (!confirm(`Make ${a.name} a speaker at ${event.title}?\n\nThey get speaker access straight away (Speaker area, speaker feedback, Gather Pulse) and appear in the speaker list. Their attendee registration stays as it is.`)) return;
+    setPromoting(a.uid);
+    try { await promoteToSpeaker(event, a, base.speakers, roleOf.get(a.uid) ?? null); toast(`${a.name} is now a speaker. Add their topic and bio in Speakers.`); }
+    catch (x) { toast(friendlyError(x), 'err'); }
+    setPromoting('');
+  }
   const toast = useToast();
   const file = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState('');
@@ -75,12 +87,15 @@ export function People() {
       {!attendees.length ? <Empty title="Nobody has joined yet">Share the join QR from Overview, or import your registration list.</Empty> : (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Institution</th><th>Source</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Institution</th><th>Source</th><th>Role</th><th /></tr></thead>
             <tbody>
               {shown.map((a) => (
                 <tr key={a.uid}>
                   <td><span className="name-cell"><Avatar id={a.uid} name={a.name} photo={a.photo || undefined} size={30} /><b>{a.name}</b></span></td><td>{a.email}</td><td>{a.phone}</td><td>{a.institution}</td>
                   <td>{a.source === 'list' ? 'Pre-registered' : 'App'}</td>
+                  <td>{roleOf.get(a.uid)?.active
+                    ? <span className="pill">Speaker</span>
+                    : <button className="btn btn-ghost btn-sm" disabled={promoting === a.uid} onClick={() => makeSpeaker(a)}>{promoting === a.uid ? 'Making speaker…' : 'Make speaker'}</button>}</td>
                   <td><button className="link danger" onClick={() => {
                     if (confirm(`Remove ${a.name} from this event?`)) removeAttendee(event.id, a.uid).catch((x) => toast(friendlyError(x), 'err'));
                   }}>Remove</button></td>
