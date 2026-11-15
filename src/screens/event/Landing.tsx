@@ -4,7 +4,7 @@ import { TypeChip, TypeDetails } from '../../components/EventTypeInfo';
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Avatar, confetti, DemoBanner, ErrorNote, Field, Logo, Spinner } from '../../components/ui';
+import { Avatar, confetti, DemoBanner, ErrorNote, Field, Logo, Modal, Spinner } from '../../components/ui';
 import { getMyProfile, getPrereg, joinEvent, type Profile } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { backend } from '../../lib/backend';
@@ -14,6 +14,40 @@ import type { EventDoc, PreregDoc, SpeakerDoc } from '../../lib/types';
 import { claimByEmail, findMyAssignment } from '../../lib/speakers';
 import { EventBanner, EventVideo } from '../../components/EventMedia';
 import { SaveEventButton } from '../../components/SaveEventButton';
+
+/** Most speakers shown in the strip; the rest are one tap away in "View all speakers". */
+const STRIP = 10;
+
+/** Speakers as a compact, sideways-scrolling strip (photo, name, designation), so the join page stays short. */
+function SpeakerCarousel({ lineup }: { lineup: EventDoc['lineup'] }) {
+  const [all, setAll] = useState(false);
+  const card = (s: EventDoc['lineup'][number]) => (
+    <div key={s.id} className="sp-chip">
+      <Avatar id={s.id} name={s.name} photo={s.photo} size={56} />
+      <b>{s.name}</b>
+      {s.role && <small>{s.role}</small>}
+    </div>
+  );
+  return (
+    <section className="sp-strip" aria-labelledby="sp-strip-h">
+      <div className="row-between">
+        <h2 id="sp-strip-h">Speakers <span className="muted">{lineup.length}</span></h2>
+        {lineup.length > 3 && <button type="button" className="link" onClick={() => setAll(true)}>View all speakers</button>}
+      </div>
+      <div className="sp-strip-row" role="list">
+        {lineup.slice(0, STRIP).map((s) => <div key={s.id} role="listitem">{card(s)}</div>)}
+        {lineup.length > STRIP && (
+          <div role="listitem"><button type="button" className="sp-chip sp-chip-more" onClick={() => setAll(true)}><b>+{lineup.length - STRIP}</b><small>more</small></button></div>
+        )}
+      </div>
+      {all && (
+        <Modal title={`Speakers (${lineup.length})`} onClose={() => setAll(false)}>
+          <div className="sp-all">{lineup.map(card)}</div>
+        </Modal>
+      )}
+    </section>
+  );
+}
 
 export function Landing({ event }: { event: EventDoc }) {
   const { user } = useAuth();
@@ -45,17 +79,7 @@ export function Landing({ event }: { event: EventDoc }) {
         {event.description && <p className="lede">{event.description}</p>}
         <TypeDetails event={event} />
         <EventVideo url={event.videoUrl} title={event.title} />
-        {event.lineup.length > 0 && <>
-          <h2>Speakers</h2>
-          <div className="lineup">
-            {event.lineup.map((s) => (
-              <div key={s.id} className="lineup-item">
-                <Avatar id={s.id} name={s.name} photo={s.photo} size={72} />
-                <b>{s.name}</b><small>{s.role}</small>
-              </div>
-            ))}
-          </div>
-        </>}
+        {event.lineup.length > 0 && <SpeakerCarousel lineup={event.lineup} />}
         {user
           ? <JoinForm event={event} />
           : <div className="join-cta">

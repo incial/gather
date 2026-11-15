@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MeetButton, useEventPings } from '../../components/MeetPing';
-import { Empty, LoadError, Spinner } from '../../components/ui';
+import { Avatar, Empty, LoadError, Spinner } from '../../components/ui';
 import { EmojiAvatar } from '../../components/Fun';
 import { useAuth } from '../../lib/auth';
 import { backend } from '../../lib/backend';
@@ -68,7 +68,7 @@ export function People() {
             {shownSpeakers.map((s) => (
               <li key={s.id} className="person card">
                 <Link href={`/e/${event.id}/speakers/${s.id}`} className="person-main" aria-label={`View ${s.name}’s profile`}>
-                  <EmojiAvatar id={s.uid || s.id} photo={s.photo || undefined} size={52} />
+                  <Avatar id={s.uid || s.id} name={s.name} photo={s.photo || undefined} size={52} />
                   <div className="grow">
                     <b>{s.name}{s.uid === me.uid && <span className="you">You</span>}</b>
                     <span className="role-chip speaker">{s.featured ? 'Featured speaker' : s.category && s.category !== 'regular' ? CATEGORIES[s.category] : 'Speaker'}</span>

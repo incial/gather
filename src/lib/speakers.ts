@@ -133,7 +133,11 @@ export async function becomeSpeaker(user: AppUser, chk: SpeakerGrant | Extract<C
       linkedin: o.linkedin.trim().slice(0, 200), website: o.website.trim().slice(0, 200), links: [], category: 'regular', order: 2_000_000,
     } });
   } else {
-    ops.push({ type: 'set', path: `events/${ev.id}/speakers/${choice.speakerId}`, merge: true, data: { uid: user.uid } });
+    // Linking a listed speaker: if the organiser didn't add a photo, use the account photo (the rules only accept
+    // the photo from this person's own Google account).
+    const cur = await backend.getDoc<SpeakerDoc>(`events/${ev.id}/speakers/${choice.speakerId}`).catch(() => null);
+    const photo = cur && !cur.photo && accountPhoto(user) ? { photo: accountPhoto(user) } : {};
+    ops.push({ type: 'set', path: `events/${ev.id}/speakers/${choice.speakerId}`, merge: true, data: { uid: user.uid, ...photo } });
   }
   ops.push(
     { type: 'set', path: `events/${ev.id}/roles/${user.uid}`, data: {
@@ -152,8 +156,32 @@ export async function becomeSpeaker(user: AppUser, chk: SpeakerGrant | Extract<C
     );
   }
   try { await backend.write(ops); }
-  catch { return { ok: false, reason: 'own' in choice ? 'That didn’t work. The organiser may have just changed the speaker code: enter the new one.' : 'That speaker entry is already linked to another account, or it’s reserved for a different email address. Sign in with the email the organiser has for you, or ask the organiser.' }; }
+  catch {
+    // If the account photo was refused (older security rules), link the speaker without it rather than fail.
+    const linkOp = ops.find((o) => o.type === 'set' && o.path === `events/${ev.id}/speakers/${speakerId}` && 'photo' in o.data && !('own' in choice));
+    if (linkOp && linkOp.type === 'set') {
+      const { photo: _drop, ...rest } = linkOp.data; void _drop;
+      const retry = ops.map((o) => (o === linkOp ? { ...linkOp, data: rest } : o));
+      try { await backend.write(retry); return { ok: true }; } catch { /* fall through to the message below */ }
+    }
+    return { ok: false, reason: 'own' in choice ? 'That didn’t work. The organiser may have just changed the speaker code: enter the new one.' : 'That speaker entry is already linked to another account, or it’s reserved for a different email address. Sign in with the email the organiser has for you, or ask the organiser.' };
+  }
   return { ok: true };
+}
+
+/** The person's Google account photo, if they have one (a web address, never an uploaded image). */
+const accountPhoto = (user: AppUser) => (user.photo && /^https:\/\//.test(user.photo) ? user.photo : '');
+
+/**
+ * A linked speaker with no photo gets their account photo, so the same picture shows on every speaker card.
+ * A photo the organiser added is never replaced. One read; writes only when something is missing.
+ */
+export async function fillAccountPhoto(user: AppUser, eventId: string, speakerId: string) {
+  const photo = accountPhoto(user);
+  if (!photo) return;
+  const sp = await backend.getDoc<SpeakerDoc>(`events/${eventId}/speakers/${speakerId}`).catch(() => null);
+  if (!sp || sp.uid !== user.uid || sp.photo) return;
+  await backend.write([{ type: 'set', path: `events/${eventId}/speakers/${speakerId}`, merge: true, data: { photo } }]).catch(() => {});
 }
 
 /* ---------- Matching organiser-listed speakers to accounts by verified email ---------- */

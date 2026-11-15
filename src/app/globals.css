@@ -2092,3 +2092,22 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
 .qa-lime { background: #ECFFB0; color: #3D4F00; }
 .qa-violet { background: #E7DFFF; color: #3F1DC0; }
 .qa-amber { background: #FFEFC7; color: #8A4B00; }
+
+/* Speaker profile: clean and minimal (no cover band, no emoji badge, no colour block) */
+.sp-profile .profile-id { margin-top: 0; padding-top: 28px; }
+.sp-profile .profile-photo { padding: 0; box-shadow: none; background: none; }
+.sp-profile .profile-photo .avatar { border-radius: 50%; }
+.sp-profile .profile-id h1 { font-size: clamp(24px, 6vw, 30px); }
+.sp-topic { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.35; letter-spacing: -.01em; }
+
+/* Join page: speakers as a compact sideways strip */
+.sp-strip { display: grid; gap: 10px; }
+.sp-strip h2 { margin: 0; }
+.sp-strip h2 .muted { font-size: .7em; font-weight: 500; }
+.sp-strip-row { display: grid; grid-auto-flow: column; grid-auto-columns: 132px; gap: 10px; overflow-x: auto; padding: 2px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: thin; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.sp-chip { display: grid; justify-items: center; align-content: start; gap: 4px; height: 100%; padding: 14px 10px; border-radius: 20px; background: #fff; box-shadow: var(--edge); text-align: center; scroll-snap-align: start; font: inherit; color: inherit; border: 0; }
+.sp-chip b { font-size: 14px; line-height: 1.2; margin-top: 4px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.sp-chip small { font-size: 12.5px; color: var(--ink-2); line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.sp-chip-more { width: 100%; align-content: center; cursor: pointer; background: var(--paper); }
+.sp-chip-more b { font-size: 22px; }
+.sp-all { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; max-height: min(60vh, 520px); overflow-y: auto; padding: 2px; }

@@ -309,17 +309,24 @@ service cloud.firestore {
         allow create: if isMe(s) && request.resource.data.uid == request.auth.uid && becomingThisSpeaker() && cleanSpeaker(request.resource.data)
           && request.resource.data.get('pinned', false) == false && request.resource.data.get('featured', false) == false
           && request.resource.data.get('category', 'regular') == 'regular';
+        // A speaker's photo may only ever be set to the photo on their own Google account (from the sign-in
+        // token), so nobody can put an arbitrary image on a speaker card.
+        function accountPhotoOk(d) {
+          return !d.diff(resource.data).affectedKeys().hasAny(['photo'])
+            || (request.auth.token.get('picture', '') != '' && d.photo == request.auth.token.picture);
+        }
         allow update: if
           // Linking a listed speaker to their account, only if nobody has linked it yet. If the organiser
           // gave an email, only the account with that verified email can claim it (no impersonation).
-          (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
+          // An empty speaker photo may be filled with the account photo at the same time.
+          (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'photo']) && accountPhotoOk(request.resource.data)
             && resource.data.get('uid', '') == '' && request.resource.data.uid == request.auth.uid && becomingThisSpeaker()
             && (resource.data.get('emailLower', '') == ''
               || (request.auth.token.email_verified == true && resource.data.emailLower == myEmail())))
           // A linked speaker editing their own public details (never order, category or contacts).
           || (signedIn() && resource.data.get('uid', '') == request.auth.uid && isSpeaker(e)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bio', 'topic', 'linkedin', 'website', 'role', 'organisation'])
-            && cleanSpeaker(request.resource.data));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bio', 'topic', 'linkedin', 'website', 'role', 'organisation', 'photo'])
+            && accountPhotoOk(request.resource.data) && cleanSpeaker(request.resource.data));
       }
 
       // Wi-Fi details: joined attendees only, so they can't sit on the public event doc.

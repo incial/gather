@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useRef } from 'react';
-import { confetti, Empty, Icon, LinkedinIcon, useToast } from '../../components/ui';
-import { EmojiAvatar } from '../../components/Fun';
+import { Avatar, confetti, Empty, Icon, LinkedinIcon, useToast } from '../../components/ui';
 import { connect } from '../../lib/api';
 import { downloadBlob } from '../../lib/csv';
 import { fmtDay, fmtTime, friendlyError, hue } from '../../lib/format';
@@ -36,7 +35,7 @@ export function Speakers() {
           <Link href={`/e/${event.id}/speakers/${s.id}`} className="speaker-card">
             <span className={`speaker-cover a-${hue(s.id)}`} aria-hidden="true" />
             {mine.has(s.id) && <span className="sticker" title="Connected"><Icon name="check" size={15} /></span>}
-            <EmojiAvatar id={s.uid || s.id} photo={s.photo || undefined} size={84} />
+            <Avatar id={s.uid || s.id} name={s.name} photo={s.photo || undefined} size={84} />
             <h3>{s.name}</h3>
             <p>{s.role}</p>
             {s.topic && <span className="pill">{s.topic}</span>}
@@ -95,11 +94,10 @@ export function SpeakerDetail() {
   }
 
   return (
-    <article className="profile">
+    <article className="profile sp-profile">
       <aside className="profile-card">
-        <div className={`profile-cover a-${hue(speaker.id)}`} aria-hidden="true" />
         <div className="profile-id">
-          <span className="profile-photo"><EmojiAvatar id={speaker.uid || speaker.id} photo={speaker.photo || undefined} size={124} /></span>
+          <span className="profile-photo"><Avatar id={speaker.uid || speaker.id} name={speaker.name} photo={speaker.photo || undefined} size={112} /></span>
           <h1>{speaker.name}</h1>
           <p className="profile-role">{[speaker.role, speaker.organisation].filter(Boolean).join(' · ')}</p>
           {tags.length > 0 && <div className="tags">{tags.map((t) => <span key={t}>{t}</span>)}</div>}
@@ -124,9 +122,9 @@ export function SpeakerDetail() {
 
       <div className="profile-main">
         {speaker.topic && (
-          <section className={`topic-card a-${hue(speaker.id)}`}>
-            <span>Speaking on</span>
-            <h2>{speaker.topic}</h2>
+          <section className="card profile-sec">
+            <h2>Speaking on</h2>
+            <p className="sp-topic">{speaker.topic}</p>
           </section>
         )}
         {speaker.bio && <section className="card profile-sec"><h2>About</h2><p className="prose">{speaker.bio}</p></section>}

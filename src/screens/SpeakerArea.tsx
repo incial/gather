@@ -244,7 +244,11 @@ function SpeakerEvent({ s }: { s: SpeakingDoc }) {
     <section className="sp-event card">
       <div className="row-between">
         <div><h2>{s.eventTitle}</h2><p className="muted">{fmtDate(s.startsAt)} · speaking as {s.speakerName}</p></div>
-        <Link className="btn btn-ghost btn-sm" href={`/e/${s.eventId}`}>Open event</Link>
+        <div className="row">
+          {/* Speakers connect with attendees and other speakers through the event's People list (Meet Ping). */}
+          <Link className="btn btn-ghost btn-sm" href={`/e/${s.eventId}/people`}>People</Link>
+          <Link className="btn btn-ghost btn-sm" href={`/e/${s.eventId}`}>Open event</Link>
+        </div>
       </div>
       <MySpeakerProfile s={s} />
 
