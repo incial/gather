@@ -44,7 +44,7 @@ export function friendlyError(e: unknown): string {
     'auth/popup-blocked': 'Your browser blocked the sign-in window. Allow pop-ups and try again.',
     'auth/network-request-failed': 'No connection. Check your internet and try again.',
     'auth/cancelled-popup-request': 'Sign-in is already open in another window. Finish it there, or close it and try again.',
-    'auth/unauthorized-domain': 'Sign-in isn’t allowed from this web address. Open the app at gatherapp-live.vercel.app.',
+    'auth/unauthorized-domain': 'Sign-in isn’t allowed from this web address. Open the app at gatherapp-ten.vercel.app.',
     'auth/web-storage-unsupported': 'Your browser is blocking the storage sign-in needs (private mode or blocked cookies). Try a normal Chrome or Safari window.',
     'auth/operation-not-supported-in-this-environment': 'Sign-in doesn’t work inside this app’s browser. Open the link in Chrome or Safari.',
     'auth/too-many-requests': 'Too many tries. Wait a minute and try again.',

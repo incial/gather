@@ -17,7 +17,7 @@ A WhatsApp failure never removes or changes the in-app Meet Ping.
 1. A Meta Business account and a WhatsApp Business Cloud API app (developers.facebook.com).
 2. A phone number added to it (not one already used in the WhatsApp app).
 3. An approved **utility** message template, for example named `meet_ping`, language `en`, body:
-   `Hi {{1}}! {{2}} would love to connect with you at {{3}}. They've sent you a Meet Ping on Gather. Open Gather to view the request and connect: https://gatherapp-live.vercel.app/inbox`
+   `Hi {{1}}! {{2}} would love to connect with you at {{3}}. They've sent you a Meet Ping on Gather. Open Gather to view the request and connect: https://gatherapp-ten.vercel.app/inbox`
 4. A permanent access token (System User token) with `whatsapp_business_messaging`.
 5. A Firebase service account key: Firebase console → Project settings → Service accounts → Generate new private key.
 
@@ -32,7 +32,7 @@ A WhatsApp failure never removes or changes the in-app Meet Ping.
 | `WHATSAPP_APP_SECRET` | App secret (for delivery-status webhooks) |
 | `WHATSAPP_VERIFY_TOKEN` | Any secret string; enter the same one in Meta's webhook settings |
 
-Webhook URL to give Meta: `https://gatherapp-live.vercel.app/api/whatsapp/webhook` (subscribe to `messages`).
+Webhook URL to give Meta: `https://gatherapp-ten.vercel.app/api/whatsapp/webhook` (subscribe to `messages`).
 
 ## Costs and plan limits
 - **Meta** charges per template message (utility category in India is roughly ₹0.12–0.15 each at the

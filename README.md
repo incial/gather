@@ -17,9 +17,10 @@ Open http://localhost:5191. With no Firebase settings it runs in demo mode: both
 
 ## Live
 
-- Website (Vercel project `gatherapp-live`): https://gatherapp-live.vercel.app
+- Code: https://github.com/incial/gather (`main` is the source of truth)
+- Website (Vercel project `gatherapp-ten`): https://gatherapp-ten.vercel.app
 - Database and Google login (Firebase project `ie-fdp-2026`, display name Gather, Mumbai)
-- Update the live site with `npm run deploy`
+- Update the live site: push to `main`, then the owner of the `gatherapp-ten` Vercel project deploys it (or run `npm run deploy` from a copy linked to that project)
 
 ## Going live (how it was set up)
 
