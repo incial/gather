@@ -9,8 +9,9 @@ import { DemoBanner, Empty, Spinner, useToast, GlobalNav } from '../../component
 import { useAuth } from '../../lib/auth';
 import { backend } from '../../lib/backend';
 import { fmtDateTime, friendlyError } from '../../lib/format';
-import { useCol, useCount } from '../../lib/live';
-import { createPulse, deletePulse, P } from '../../lib/pulse/api';
+import { useCol } from '../../lib/live';
+import { useRowCount } from '../../lib/summaries';
+import { createPulse, deletePulse } from '../../lib/pulse/api';
 import { usePulseRole } from '../../lib/roles';
 import type { PulseDoc } from '../../lib/pulse/types';
 import type { EventDoc } from '../../lib/types';
@@ -111,7 +112,7 @@ export function PulseHome() {
 
 function PulseCard({ p, onShare }: { p: PulseDoc; onShare: () => void }) {
   const toast = useToast();
-  const answers = useCount(`${P(p.id)}/${p.kind === 'survey' ? 'submissions' : 'responses'}`);
+  const answers = useRowCount('pulse', '', `${p.id}:${p.kind === 'survey' ? 's' : 'p'}`);
   const [busy, setBusy] = useState(false);
   async function remove() {
     if (!confirm(`Delete “${p.title}” and all its responses? This can’t be undone.`)) return;

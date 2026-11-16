@@ -8,15 +8,17 @@ import { feedbackSheet, sessionFeedbackSheet } from '../../lib/exports';
 import { fmtDate, fmtTime } from '../../lib/format';
 import { friendlyError } from '../../lib/format';
 import type { Question } from '../../lib/types';
-import { loadEventData, useAdmin, useAdminCol } from './context';
+import { loadEventData, useAdmin } from './context';
+import { fetchFeedbackSummary, useSummary } from '../../lib/summaries';
 import { useCol } from '../../lib/live';
 import { feedbackStats, feedbackWriter, setFeedbackStatus } from '../../lib/speakers';
 import type { SpeakerFeedbackDoc } from '../../lib/types';
 import { fmtDateTime } from '../../lib/format';
 import { downloadCsv } from '../../lib/csv';
 
-function RatingBars({ values }: { values: number[] }) {
-  const counts = [5, 4, 3, 2, 1].map((n) => ({ n, c: values.filter((v) => v === n).length }));
+/** `dist` is how many people gave 1, 2, 3, 4 and 5 stars (counted on the server). */
+function RatingBars({ dist }: { dist: number[] }) {
+  const counts = [5, 4, 3, 2, 1].map((n) => ({ n, c: dist[n - 1] ?? 0 }));
   const max = Math.max(1, ...counts.map((x) => x.c));
   return (
     <div className="bars">
@@ -29,14 +31,19 @@ function RatingBars({ values }: { values: number[] }) {
   );
 }
 
-const avg = (v: number[]) => (v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : '–');
+const avg = (a: number | null | undefined) => (a == null ? '–' : a.toFixed(1));
 
 export function FeedbackAdmin() {
   const base = useAdmin();
   const { event, speakers, sessions, prefix } = base;
-  const feedback = useAdminCol('feedback').data;
-  const sessionFeedback = useAdminCol('sessionFeedback').data;
   const sortedSessions = [...sessions].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  // Averages, star counts, option counts and the comments shown, worked out on the server in one request.
+  const sessionIds = sortedSessions.map((s) => s.id);
+  const speakerIds = speakers.map((s) => s.id);
+  const summary = useSummary(`feedback|${event.id}|${sessionIds.join(',')}|${speakerIds.join(',')}|${event.questions.map((q) => q.id).join(',')}`,
+    () => fetchFeedbackSummary(event.id, sessionIds, speakerIds));
+  const fb = summary.data;
+  const total = fb?.total ?? 0;
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const open = (v: boolean) => updateEvent(event.id, { feedbackOpen: v }).then(() => toast(v ? 'Feedback is open' : 'Feedback closed')).catch((x) => toast(friendlyError(x), 'err'));
@@ -45,8 +52,9 @@ export function FeedbackAdmin() {
     <div className="stack-lg">
       <SpeakerFeedbackAdmin />
       <div className="row-between">
-        <h1>Feedback <small className="muted">{feedback.length} responses</small></h1>
+        <h1>Feedback <small className="muted">{fb ? `${total} responses` : summary.error ? '' : '…'}</small></h1>
         <div className="row">
+          <button className="btn btn-ghost btn-sm" onClick={summary.refresh} disabled={summary.loading}>Refresh</button>
           <CsvButton load={async () => feedbackSheet(await loadEventData(base))} prefix={prefix} />
           <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Edit questions</button>
           <button className="btn btn-primary btn-sm" onClick={() => open(!event.feedbackOpen)}>{event.feedbackOpen ? 'Close feedback' : 'Open feedback'}</button>
@@ -57,13 +65,12 @@ export function FeedbackAdmin() {
           <h2>By session</h2>
           <CsvButton load={async () => sessionFeedbackSheet(await loadEventData(base))} prefix={prefix} />
         </div>
+        {summary.error && !fb ? <ErrorNote text="Couldn’t load the feedback summary. Try Refresh." /> : null}
         {!sessions.length && <Empty title="No sessions yet">Add sessions in Schedule. Each one can collect its own feedback.</Empty>}
         <div className="fb-grid">
           {sortedSessions.map((s) => {
-            const list = sessionFeedback.filter((f) => f.sessionId === s.id);
-            const nums = list.map((f) => f.rating);
+            const st = fb?.sessions[s.id];
             const on = s.feedbackOn !== false;
-            const comments = list.filter((f) => f.comment);
             return (
               <section key={s.id} className="panel">
                 <div className="row-between">
@@ -71,10 +78,10 @@ export function FeedbackAdmin() {
                   <button className="link" onClick={() => saveSession(event.id, { ...s, feedbackOn: !on }).then(() => toast(on ? 'Feedback off for this session' : 'Feedback on for this session')).catch((x) => toast(friendlyError(x), 'err'))}>{on ? 'Turn off' : 'Turn on'}</button>
                 </div>
                 <p className="muted">{fmtDate(s.startsAt)} · {fmtTime(s.startsAt)}</p>
-                {!on ? <p className="muted">Feedback is off for this session.</p> : !list.length ? <p className="muted">No ratings yet.</p> : <>
-                  <p className="big-count"><b>{avg(nums)}</b> <StarRow value={Math.round(nums.reduce((a, b) => a + b, 0) / nums.length)} /> <span className="muted">from {nums.length}</span></p>
-                  <RatingBars values={nums} />
-                  {comments.length > 0 && <ul className="quotes">{comments.map((f) => <li key={f.id}>{f.comment}</li>)}</ul>}
+                {!on ? <p className="muted">Feedback is off for this session.</p> : !st ? <p className="muted">{summary.error ? '–' : 'Loading…'}</p> : !st.n ? <p className="muted">No ratings yet.</p> : <>
+                  <p className="big-count"><b>{avg(st.avg)}</b> <StarRow value={Math.round(st.avg ?? 0)} /> <span className="muted">from {st.n}</span></p>
+                  <RatingBars dist={st.dist} />
+                  {st.comments.length > 0 && <ul className="quotes">{st.comments.map((c, i) => <li key={i}>{c}</li>)}</ul>}
                 </>}
               </section>
             );
@@ -82,30 +89,30 @@ export function FeedbackAdmin() {
         </div>
       </section>
       <h2>Overall event</h2>
-      {!feedback.length && <Empty title="No responses yet">{event.feedbackOpen ? 'Attendees can send feedback from the app now.' : 'Open feedback when you’re ready for responses.'}</Empty>}
-      {feedback.length > 0 && (
+      {fb && !total && <Empty title="No responses yet">{event.feedbackOpen ? 'Attendees can send feedback from the app now.' : 'Open feedback when you’re ready for responses.'}</Empty>}
+      {fb && total > 0 && (
         <div className="fb-grid">
           {event.questions.map((q) => {
-            const answers = feedback.map((f) => f.answers[q.id]).filter((a) => a !== undefined && a !== '');
-            if (q.type === 'rating') {
-              const nums = answers.map(Number);
-              return <section key={q.id} className="panel"><h3>{q.label}</h3><p className="big-count"><b>{avg(nums)}</b> average from {nums.length}</p><RatingBars values={nums} /></section>;
+            const r = fb.questions.find((x) => x.id === q.id);
+            if (!r) return null;
+            if ('dist' in r) {
+              return <section key={q.id} className="panel"><h3>{q.label}</h3><p className="big-count"><b>{avg(r.avg)}</b> average from {r.n}</p><RatingBars dist={r.dist} /></section>;
             }
-            if (q.type === 'choice') {
+            if ('options' in r) {
               return (
                 <section key={q.id} className="panel"><h3>{q.label}</h3>
                   <div className="bars">
-                    {(q.options ?? []).map((o) => {
-                      const c = answers.filter((a) => a === o).length;
-                      return <div key={o} className="bar-row bar-row-wide"><span>{o}</span><div className="bar"><i style={{ width: `${answers.length ? (c / answers.length) * 100 : 0}%` }} /></div><span>{c}</span></div>;
-                    })}
+                    {(r.options ?? []).map(({ option, n: c }) => (
+                      <div key={option} className="bar-row bar-row-wide"><span>{option}</span><div className="bar"><i style={{ width: `${r.n ? (c / r.n) * 100 : 0}%` }} /></div><span>{c}</span></div>
+                    ))}
                   </div>
                 </section>
               );
             }
             return (
               <section key={q.id} className="panel"><h3>{q.label}</h3>
-                <ul className="quotes">{answers.map((a, i) => <li key={i}>{String(a)}</li>)}</ul>
+                <ul className="quotes">{r.answers.map((a, i) => <li key={i}>{a}</li>)}</ul>
+                {r.n > r.answers.length && <p className="muted">Showing {r.answers.length} of {r.n}. Download the CSV for all of them.</p>}
               </section>
             );
           })}
@@ -113,8 +120,8 @@ export function FeedbackAdmin() {
             <section className="panel"><h3>Speaker ratings</h3>
               <ul className="plain-list">
                 {speakers.map((s) => {
-                  const v = feedback.map((f) => f.speakerRatings?.[s.id]).filter((n): n is number => !!n);
-                  return <li key={s.id} className="row-between"><span>{s.name}</span><span><b>{avg(v)}</b> <small className="muted">({v.length})</small></span></li>;
+                  const v = fb.speakers[s.id];
+                  return <li key={s.id} className="row-between"><span>{s.name}</span><span><b>{avg(v?.avg)}</b> <small className="muted">({v?.n ?? 0})</small></span></li>;
                 })}
               </ul>
             </section>

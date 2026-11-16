@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Scanner } from '../../components/Scanner';
 import { CsvButton, Empty, Modal, useToast } from '../../components/ui';
 import { markAttendance, setSelfCheckIn, unmarkAttendance } from '../../lib/api';
-import { primeCount, useCount } from '../../lib/live';
+import { primeCount, useRowCount } from '../../lib/summaries';
 import type { SessionDoc } from '../../lib/types';
 import { useEffect } from 'react';
 import { attendanceLogSheet, attendanceRegisterSheet } from '../../lib/exports';
@@ -46,10 +46,10 @@ import { BadgeCheck, CircleAlert, CircleX, Hand, RefreshCw, ScanLine, Search } f
 function SessionTile({ eventId, s, total, active, present, onOpen, tick, all }: { eventId: string; s: SessionDoc; total: number; active: boolean; present: number | null; onOpen: () => void; tick: number; all: number }) {
   const now = Date.now();
   const live = Date.parse(s.startsAt) <= now && Date.parse(s.endsAt) >= now;
-  const path = `events/${eventId}/attendance`;
   // While selected, keep the shared count in step with the live list, so it's current when another session is picked.
-  useEffect(() => { if (present !== null) primeCount(path, [['sessionId', s.id]], present); }, [present, path, s.id]);
-  const c = useCount(present === null ? path : null, [['sessionId', s.id]]);
+  useEffect(() => { if (present !== null) primeCount('attendance', eventId, s.id, present); }, [present, eventId, s.id]);
+  // The other sessions' numbers arrive together in one request (and refresh together).
+  const c = useRowCount('attendance', eventId, present === null ? s.id : null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (tick && live && present === null) c.refresh(); }, [tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,7 +196,7 @@ function DoorCheckIn({ attendees }: { attendees: AttendeeDoc[] }) {
     Status: a.checkedIn ? 'Checked in' : 'Not checked in', 'Check-in time': a.checkedIn ? fmtDateTime(a.checkedInAt) : '', 'Check-in method': a.checkedIn ? METHOD[a.checkInMethod ?? 'pass'] : '',
   })), ['Name', 'Email', 'Phone', 'Event', 'Registration ID', 'Status', 'Check-in time', 'Check-in method']);
   const shown = attendees.filter((a) => !q || `${a.name} ${a.email} ${a.regId ?? ''} ${a.phone}`.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => Number(!!b.checkedIn) - Number(!!a.checkedIn) || (b.checkedInAt ?? '').localeCompare(a.checkedInAt ?? '') || a.name.localeCompare(b.name));
+    .sort((a, b) => Number(!!b.checkedIn) - Number(!!a.checkedIn) || (b.checkedInAt ?? '').localeCompare(a.checkedInAt ?? '') || (a.name ?? '').localeCompare(b.name ?? ''));
   const Ico = { ok: BadgeCheck, already: CircleAlert, invalid: CircleX, wrong: CircleX, missing: CircleX, error: CircleX };
 
   return (

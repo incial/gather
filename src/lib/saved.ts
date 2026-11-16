@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { fetchMissingEvents } from './summaries';
 import { backend } from './backend';
 import { useCol } from './live';
 import type { AppUser, EventDoc, SwipeDoc } from './types';
@@ -59,14 +60,8 @@ export const unsave = (eventId: string, uid: string) => once(eventId, () => back
 export async function tidySaved(uid: string, saved: SwipeDoc[]): Promise<{ gone: string[]; hidden: string[] }> {
   const key = `gather-saved-tidy-${uid}`;
   try { if (sessionStorage.getItem(key)) return { gone: [], hidden: [] }; sessionStorage.setItem(key, '1'); } catch { /* private mode */ }
-  const gone: string[] = [];
-  const hidden: string[] = [];
-  await Promise.all(saved.map(async (s) => {
-    try {
-      const ev = await backend.getDoc<EventDoc>(`events/${s.id}`);
-      if (!ev) gone.push(s.id);
-    } catch { hidden.push(s.id); }
-  }));
+  // Every saved event checked in one request instead of one read per event from the phone.
+  const { gone, hidden } = await fetchMissingEvents(saved.map((s) => s.id)).catch(() => ({ gone: [] as string[], hidden: [] as string[] }));
   await Promise.all(gone.map((id) => unsave(id, uid)?.catch(() => {})));
   return { gone, hidden };
 }

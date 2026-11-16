@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { fmtTime } from '../lib/format';
-import { useCount } from '../lib/live';
+import { useRowCount } from '../lib/summaries';
 import { useManagedEvents } from '../lib/team';
 import type { AppUser, EventDoc } from '../lib/types';
 import { Icon } from './ui';
@@ -23,8 +23,8 @@ function dayLabel(iso: string, now: number) {
 }
 
 function HostCard({ e, now }: { e: EventDoc; now: number }) {
-  // One count read per card (1 read per 1,000 guests), not the guest list itself.
-  const guests = useCount(`events/${e.id}/attendees`);
+  // Every card's guest count arrives in one request, counted on the server.
+  const guests = useRowCount('attendees', '', e.id);
   const live = Date.parse(e.startsAt) <= now;
   const n = guests.n;
   return (
@@ -43,7 +43,7 @@ function HostCard({ e, now }: { e: EventDoc; now: number }) {
       </div>
       <Link href={`/admin/e/${e.id}`} className="host-cover" aria-label={`Manage ${e.title}`} tabIndex={-1}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        {e.bannerThumb ? <img src={e.bannerThumb} alt="" /> : <span>{e.title.slice(0, 1)}</span>}
+        {e.bannerThumb ? <img src={e.bannerThumb} alt="" /> : <span>{(e.title ?? '').slice(0, 1)}</span>}
       </Link>
     </article>
   );

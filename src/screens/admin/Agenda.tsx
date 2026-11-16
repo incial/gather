@@ -9,7 +9,7 @@ import { fmtDay, fmtTime, friendlyError, fromLocalInput, toLocalInput } from '..
 import { KIND_LABEL } from '../../lib/session';
 import type { SessionDoc, SessionKind } from '../../lib/types';
 import { loadEventData, useAdmin } from './context';
-import { useCount } from '../../lib/live';
+import { useRowCount } from '../../lib/summaries';
 import { ImportSchedule } from './ImportSchedule';
 
 const blank = (startsAt: string): SessionDoc => ({ id: '', title: '', description: '', room: '', startsAt, endsAt: startsAt, speakerIds: [], kind: 'talk', feedbackOn: true });
@@ -93,8 +93,8 @@ function SessionForm({ initial, speakers, onSave }: { initial: SessionDoc; speak
   );
 }
 
-/** One cheap count per session instead of loading every check-in. */
+/** This session's check-ins; every session's number arrives in one request. */
 function CheckinCount({ eventId, sessionId }: { eventId: string; sessionId: string }) {
-  const c = useCount(`events/${eventId}/attendance`, [['sessionId', sessionId]]);
+  const c = useRowCount('attendance', eventId, sessionId);
   return <>{c.error ? '–' : c.n ?? '…'}</>;
 }

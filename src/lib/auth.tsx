@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { backend } from './backend';
 import { resetLive } from './live';
+import { forgetSummaries } from './summaries';
 import { ensureProfile } from './profile';
 import type { AppUser } from './types';
 
@@ -37,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return backend.onAuth(async (who) => {
     // A different person (or signing out): drop every live listener and cached result from before.
     const uid = who?.uid ?? null;
-    if (lastUid !== undefined && uid !== lastUid) resetLive();
+    if (lastUid !== undefined && uid !== lastUid) { resetLive(); forgetSummaries(); }
     lastUid = uid;
     if (who?.guest) { setHint(false); setState({ user: null, guest: who, loading: false, isOrganiser: false, isSuper: false }); return; }
     const user = who;

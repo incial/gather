@@ -60,4 +60,6 @@ export const LIMITS = {
   waPerSender: [{ max: 10, windowMs: 3600_000 }, { max: 40, windowMs: 24 * 3600_000 }],
   /** /api/whatsapp/webhook per IP (Meta sends status updates in bursts). */
   webhookPerIp: { max: 600, windowMs: 60_000 },
+  /** Dashboard summary APIs per IP: a few calls per screen; generous for a shared hall Wi-Fi. */
+  apiPerIp: { max: 300, windowMs: 60_000 },
 } satisfies Record<string, Limit | Limit[]>;

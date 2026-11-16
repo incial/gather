@@ -10,7 +10,8 @@ import { DeleteEventDialog } from './admin/DeleteEvent';
 import { useAuth } from '../lib/auth';
 import { backend } from '../lib/backend';
 import { fmtDateTime, fmtRange, friendlyError } from '../lib/format';
-import { useCol, useCount } from '../lib/live';
+import { useCol } from '../lib/live';
+import { fetchPlatformStats, useRowCount, useSummary, type PlatformStats as PlatformStatsData } from '../lib/summaries';
 import type { PulseDoc } from '../lib/pulse/types';
 import { eventUrl } from '../lib/qr';
 import type { EventDoc } from '../lib/types';
@@ -61,12 +62,14 @@ export function God() {
 }
 
 function PlatformStats() {
-  // Counts cost one read per 1,000 documents, so these stay cheap however big Gather gets.
-  const events = useCount('events');
-  const people = useCount('users');
-  const pulse = useCount('pulse');
-  const organisers = useCount('organisers');
-  const certs = useCount('certificates');
+  // All five totals in one request, counted on the server (one read per 1,000 documents).
+  const stats = useSummary('platform', fetchPlatformStats);
+  const pick = (k: keyof PlatformStatsData) => ({ n: stats.data ? stats.data[k] : null, error: !!stats.error && !stats.data });
+  const events = pick('events');
+  const people = pick('users');
+  const pulse = pick('pulse');
+  const organisers = pick('organisers');
+  const certs = pick('certificates');
   const n = (c: { n: number | null; error: boolean }) => (c.error ? '–' : c.n ?? '…');
   return (
     <div className="stat-row">
@@ -110,7 +113,7 @@ function AllEvents() {
 }
 
 function EventRow({ e }: { e: EventDoc }) {
-  const joined = useCount(`events/${e.id}/attendees`);
+  const joined = useRowCount('attendees', '', e.id);
   const [purging, setPurging] = useState(false);
   const gone = isDeletedEvent(e);
   return (

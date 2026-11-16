@@ -7,7 +7,7 @@ import { updateEvent } from '../../lib/api';
 import { downloadZip } from '../../lib/exports';
 import { fmtRange, fmtTime, friendlyError } from '../../lib/format';
 import type { EventDoc } from '../../lib/types';
-import { useCount } from '../../lib/live';
+import { fetchEventOverview, useSummary, type EventOverview } from '../../lib/summaries';
 import { eventUrl, joinUrl } from '../../lib/qr';
 import { visibilityOf, visibilityPatch, VISIBILITY_LABEL, type Visibility } from './EventForm';
 import { loadEventData, useAdmin } from './context';
@@ -30,14 +30,16 @@ export function Overview() {
   const base = useAdmin();
   const { event, sessions } = base;
   const toast = useToast();
-  const p = `events/${event.id}`;
-  // Counts cost 1 read per 1,000 documents instead of downloading every record.
-  const attendees = useCount(`${p}/attendees`);
-  const prereg = useCount(`${p}/preregistered`);
-  const checkins = useCount(`${p}/attendance`);
-  const feedback = useCount(`${p}/feedback`);
-  const connections = useCount(`${p}/connections`);
-  const saved = useCount(`${p}/saved`);
+  // All of this screen's numbers in one request; the server counts them inside Firestore.
+  const summary = useSummary(`overview|${event.id}`, () => fetchEventOverview(event.id));
+  const pick = (k: keyof EventOverview) => ({ n: summary.data ? summary.data[k] : null, error: !!summary.error && !summary.data });
+  const attendees = pick('attendees');
+  const prereg = pick('preregistered');
+  const checkins = pick('checkins');
+  const feedback = pick('feedback');
+  const connections = pick('connections');
+  const saved = pick('saved');
+  const checkedIn = pick('checkedIn');
   const [exporting, setExporting] = useState(false);
   const toggle = (patch: Parameters<typeof updateEvent>[1], msg: string) =>
     updateEvent(event.id, patch).then(() => toast(msg)).catch((x) => toast(friendlyError(x), 'err'));
@@ -49,9 +51,8 @@ export function Overview() {
   const shareCode = qrFor === 'code' && vis === 'public' ? event.joinCode : undefined;
   const share = inviteText(event, url, shareCode);
   const n = (c: { n: number | null; error: boolean }) => (c.error ? '–' : c.n ?? '…');
-  const refresh = () => [attendees, prereg, checkins, feedback, connections, saved, checkedIn].forEach((c) => c.refresh());
+  const refresh = summary.refresh;
 
-  const checkedIn = useCount(`${p}/attendees`, [['checkedIn', true]]);
   const stats = [
     ['Expected', event.expectedAttendees ? event.expectedAttendees : '–', 'organiser’s estimate'],
     ['Capacity', event.capacity ? event.capacity : '∞', event.capacity ? `${Math.max(0, event.capacity - (attendees.n ?? 0))} places left` : 'no limit'],

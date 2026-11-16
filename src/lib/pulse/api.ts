@@ -1,7 +1,7 @@
 import { backend, type WriteOp } from '../backend';
 import type { AppUser } from '../types';
-import { lockKey, newCode, newSlide, summarize, type Answer } from './engine';
-import type { AnswerValue, PulseDoc, PulseKind, PulseLiveResults, PulseResponse, PulseState, PulseSubmission, Slide } from './types';
+import { lockKey, newCode, newSlide, summarize } from './engine';
+import type { AnswerValue, PulseDoc, PulseKind, PulseLiveResults, PulseState, Slide } from './types';
 
 /** Owner-only extras: quiz answers, when each quiz question opened, and where locked questions are kept. */
 export interface PulseKey { answers: Record<string, string[]>; openedAt: Record<string, string>; vaultId: string }
@@ -191,10 +191,6 @@ export async function deletePulse(p: PulseDoc) {
 
 /* ---------- Results ---------- */
 
-export const answersFor = (slideId: string, rows: PulseResponse[]): Answer[] =>
-  rows.filter((r) => r.slideId === slideId).map((r) => ({ id: r.id, value: r.value, name: r.name, hidden: r.hidden }));
-
-export const surveyAnswers = (slideId: string, subs: PulseSubmission[]): Answer[] =>
-  subs.filter((s) => s.answers && s.answers[slideId] !== undefined).map((s) => ({ id: s.id, value: s.answers[slideId], name: s.name }));
+export { answersFor, surveyAnswers } from './answers';
 
 export { summarize };

@@ -12,7 +12,8 @@ import { speakerUrl } from '../../lib/qr';
 import type { RoleDoc, SpeakerCategory, SpeakerCodeDoc, SpeakerDoc } from '../../lib/types';
 import { CATEGORIES, MAX_TRIES, resetTries, revokeCode, revokeSpeaker, saveSpeakerOrder, setSpeakerPin, showCode, sortSpeakers, switchOffPin, type SpeakerPinDoc, type SpeakerTryDoc } from '../../lib/speakers';
 import { loadEventData, useAdmin } from './context';
-import { useCol, useCount, useDoc } from '../../lib/live';
+import { useCol, useDoc } from '../../lib/live';
+import { useRowCount } from '../../lib/summaries';
 
 const blank: SpeakerDoc = { id: '', name: '', role: '', organisation: '', topic: '', expertise: '', bio: '', email: '', phone: '', linkedin: '', website: '', links: [] };
 
@@ -242,6 +243,6 @@ function SpeakerForm({ initial, onSave }: { initial: SpeakerDoc; onSave: (s: Spe
 }
 
 function ConnCount({ eventId, speakerId }: { eventId: string; speakerId: string }) {
-  const c = useCount(`events/${eventId}/connections`, [['speakerId', speakerId]]);
+  const c = useRowCount('connections', eventId, speakerId);
   return <>{c.error ? '–' : c.n ?? '…'}</>;
 }

@@ -1,3 +1,4 @@
+import { fetchMissingEvents } from './summaries';
 import { backend, type WriteOp } from './backend';
 import { deletePulse } from './pulse/api';
 import { newRegId, sortSpeakers } from './speakers';
@@ -427,15 +428,13 @@ export const removeOrganiser = (email: string) =>
 
 /**
  * Removes a person's copies of events that no longer exist (deleted before hard delete
- * existed, or while they were offline). Each copy costs one read to check, so this runs at
+ * existed, or while they were offline). All copies are checked in one request, and this runs at
  * most once a day per person on each device (it used to run every session).
  */
 export async function forgetDeletedEvents(uid: string, ids: string[], scope = 'events'): Promise<string[]> {
   if (!dueEvery(`gather-healed-${scope}-${uid}`, TIDY_EVERY_MS)) return [];
-  const gone: string[] = [];
-  await Promise.all(ids.map(async (id) => {
-    try { if (!(await backend.getDoc(`events/${id}`))) gone.push(id); } catch { /* not readable is not proof it is gone */ }
-  }));
+  // One request checks every event (not readable is not proof it is gone, so only `gone` is removed).
+  const { gone } = await fetchMissingEvents(ids).catch(() => ({ gone: [] as string[] }));
   // One batch for all the removals instead of two writes per event.
   if (gone.length) await backend.write(gone.flatMap((id) => [
     { type: 'delete' as const, path: `users/${uid}/events/${id}` },
