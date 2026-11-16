@@ -5,11 +5,26 @@ import { useState } from 'react';
 import { Icon, QrImage, useToast } from '../../components/ui';
 import { updateEvent } from '../../lib/api';
 import { downloadZip } from '../../lib/exports';
-import { fmtRange, friendlyError } from '../../lib/format';
+import { fmtRange, fmtTime, friendlyError } from '../../lib/format';
+import type { EventDoc } from '../../lib/types';
 import { useCount } from '../../lib/live';
 import { eventUrl, joinUrl } from '../../lib/qr';
 import { visibilityOf, visibilityPatch, VISIBILITY_LABEL, type Visibility } from './EventForm';
 import { loadEventData, useAdmin } from './context';
+
+/** The invitation people receive when the organiser shares the event: its details, then the link (and code). */
+function inviteText(e: EventDoc, link: string, code?: string) {
+  const when = [fmtRange(e.startsAt, e.endsAt), fmtTime(e.startsAt)].filter(Boolean).join(', ');
+  // The event's own organisation: its "Organised by" field, or the organisation given in its type details.
+  const t = e.typeDetails ?? {};
+  const org = (e.organiser || '').trim()
+    || [t.department, t.institution].map((x) => (x || '').trim()).filter(Boolean).join(', ')
+    || (t.organisation || t.host || '').trim();
+  const details = [e.title, e.tagline, when && `When: ${when}`, e.venue && `Where: ${e.venue}`, org && `Organised by ${org}`];
+  const join = [`Join here: ${link}`, code && `Or open Gather and enter the join code ${code}`];
+  const keep = (lines: (string | undefined | false)[]) => lines.filter((l): l is string => !!l && !!l.trim());
+  return [...keep(details), '', ...keep(join)].join('\n');
+}
 
 export function Overview() {
   const base = useAdmin();
@@ -30,7 +45,9 @@ export function Overview() {
   const privateLink = eventUrl(event.id);
   const [qrFor, setQrFor] = useState<'code' | 'link'>(vis === 'public' ? 'code' : 'link');
   const url = qrFor === 'code' && vis === 'public' ? joinUrl(event.joinCode) : privateLink;
-  const share = `${event.title}: join here ${privateLink}`;
+  // What Copy, WhatsApp and Share send: the event details, then the link (the join code too, for the code QR).
+  const shareCode = qrFor === 'code' && vis === 'public' ? event.joinCode : undefined;
+  const share = inviteText(event, url, shareCode);
   const n = (c: { n: number | null; error: boolean }) => (c.error ? '–' : c.n ?? '…');
   const refresh = () => [attendees, prereg, checkins, feedback, connections, saved, checkedIn].forEach((c) => c.refresh());
 
@@ -49,11 +66,13 @@ export function Overview() {
   // Uses the phone's share sheet where there is one, otherwise copies the link.
   async function shareEvent() {
     const link = vis === 'public' ? joinUrl(event.joinCode) : privateLink;
+    const text = inviteText(event, link, vis === 'public' ? event.joinCode : undefined);
     if (navigator.share) {
-      try { await navigator.share({ title: event.title, text: `${event.title}: join here`, url: link }); return; }
+      // The link is part of the text, so apps that drop the separate link field still get it.
+      try { await navigator.share({ title: event.title, text }); return; }
       catch (x) { if ((x as { name?: string }).name === 'AbortError') return; }
     }
-    navigator.clipboard.writeText(link).then(() => toast(vis === 'draft' ? 'Link copied. It opens once the event is public or private.' : 'Link copied')).catch(() => toast('Couldn’t copy the link', 'err'));
+    navigator.clipboard.writeText(text).then(() => toast(vis === 'draft' ? 'Invitation copied. The link opens once the event is public or private.' : 'Invitation copied: event details and link')).catch(() => toast('Couldn’t copy the link', 'err'));
   }
 
   async function exportAll() {
@@ -103,9 +122,13 @@ export function Overview() {
             </>
           )}
           <div className="row-center">
-            <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(qrFor === 'code' && vis === 'public' ? joinUrl(event.joinCode) : privateLink).then(() => toast('Link copied'))}>Copy link</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(share).then(() => toast('Invitation copied: event details and link')).catch(() => toast('Couldn’t copy the link', 'err'))}>Copy invitation</button>
             <a className="btn btn-ghost btn-sm" href={`https://wa.me/?text=${encodeURIComponent(share)}`} target="_blank" rel="noreferrer">WhatsApp</a>
           </div>
+          <details className="invite-preview">
+            <summary>What people receive</summary>
+            <pre>{share}</pre>
+          </details>
         </section>
         <section className="panel">
           <h2>Switches</h2>
