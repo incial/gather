@@ -14,8 +14,12 @@ import { useCol } from '../../lib/live';
 import { FDP_EVENT } from '../../lib/programme';
 import { eventUrl } from '../../lib/qr';
 import type { EventDoc } from '../../lib/types';
-import { blankEvent, EventForm, visibilityOf, VISIBILITY_LABEL } from './EventForm';
-import { DeleteEventDialog } from './DeleteEvent';
+import dynamic from 'next/dynamic';
+import { blankEvent, visibilityOf, VISIBILITY_LABEL } from './eventFields';
+
+// The create-event form and the delete dialog are their own chunks: downloaded only when opened.
+const EventForm = dynamic(() => import('./EventForm').then((m) => m.EventForm), { ssr: false, loading: () => <Spinner /> });
+const DeleteEventDialog = dynamic(() => import('./DeleteEvent').then((m) => m.DeleteEventDialog), { ssr: false });
 import { isEventOwner, useManagedEvents } from '../../lib/team';
 
 type Phase = 'live' | 'upcoming' | 'past';

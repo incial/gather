@@ -7,23 +7,14 @@ import { ErrorNote, Field } from '../../components/ui';
 import { checkFile, saveAsset } from '../../lib/assets';
 import { prepareBanner, removeBanner, saveBanner, videoEmbedUrl } from '../../lib/eventMedia';
 import { friendlyError, fromLocalInput, toLocalInput } from '../../lib/format';
-import type { Accent, EventDoc } from '../../lib/types';
+import type { Accent } from '../../lib/types';
 import { cleanDetails, EVENT_TYPES, TYPE_ORDER, typeInfo } from '../../lib/eventTypes';
 
-export type EventFields = Pick<EventDoc, 'title' | 'tagline' | 'description' | 'organiser' | 'venue' | 'startsAt' | 'endsAt' | 'published' | 'registration' | 'feedbackOpen' | 'color' | 'mapLink' | 'linkAccess' | 'videoUrl' | 'expectedAttendees' | 'capacity' | 'eventType' | 'typeDetails'>;
-
-export const blankEvent = (): EventFields => ({
-  title: '', tagline: '', description: '', organiser: '', venue: '', startsAt: '', endsAt: '',
-  published: false, registration: 'open', feedbackOpen: false, color: 'blue', mapLink: '', linkAccess: true, videoUrl: '', expectedAttendees: 0, capacity: 0, eventType: undefined, typeDetails: {},
-});
+import { blankEvent, visibilityOf, visibilityPatch, VISIBILITY_LABEL, type EventFields, type Visibility } from './eventFields';
+export { blankEvent, visibilityOf, visibilityPatch, VISIBILITY_LABEL, type EventFields, type Visibility };
 
 const COLORS: Accent[] = ['blue', 'amber', 'violet', 'lime', 'rose'];
 
-/** Who can find the event, as one choice instead of two switches. */
-export type Visibility = 'public' | 'private' | 'draft';
-export const visibilityOf = (e: Pick<EventDoc, 'published' | 'linkAccess'>): Visibility => (e.published ? 'public' : e.linkAccess ? 'private' : 'draft');
-export const visibilityPatch = (v: Visibility) => ({ published: v === 'public', linkAccess: v !== 'draft' });
-export const VISIBILITY_LABEL: Record<Visibility, string> = { public: 'Public', private: 'Private link', draft: 'Draft' };
 
 /**
  * Create and edit form. `eventId` is set when editing. When creating, onSubmit returns the new ID

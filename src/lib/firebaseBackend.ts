@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import {
-  GoogleAuthProvider, connectAuthEmulator, deleteUser, getAuth, onAuthStateChanged, reauthenticateWithPopup, signInWithCredential,
+  GoogleAuthProvider, browserLocalPersistence, browserPopupRedirectResolver, connectAuthEmulator, deleteUser, getRedirectResult,
+  indexedDBLocalPersistence, initializeAuth, onAuthStateChanged, reauthenticateWithPopup, signInWithCredential,
   signInAnonymously, signInWithPopup, signInWithRedirect, signOut,
 } from 'firebase/auth';
 import {
@@ -10,12 +11,11 @@ import {
 } from 'firebase/firestore';
 import type { Backend, QueryOpts, Where } from './backend';
 
-export const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
+import { firebaseConfig } from './firebaseConfig';
+export { firebaseConfig };
+
+/** Set while a full-page Google sign-in is in progress, so the next page load finishes it. */
+const REDIRECT_KEY = 'gather-auth-redirect';
 
 /** Firestore timestamps become ISO strings so screens and CSVs handle one format. */
 function plain(snap: DocumentSnapshot<DocumentData>) {
@@ -27,7 +27,16 @@ function plain(snap: DocumentSnapshot<DocumentData>) {
 
 export function createFirebaseBackend(): Backend {
   const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
+  // Same sign-in storage as before, but without loading Google's pop-up helper (iframe.js + gapi, about 128 KB)
+  // on every page: it's passed only to the calls that open Google's sign-in.
+  const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] });
+  // Coming back from a full-page Google sign-in (used when a phone blocks the pop-up): finish it.
+  try {
+    if (sessionStorage.getItem(REDIRECT_KEY)) {
+      sessionStorage.removeItem(REDIRECT_KEY);
+      getRedirectResult(auth, browserPopupRedirectResolver).catch(() => { /* shown again on the login page if needed */ });
+    }
+  } catch { /* storage blocked: nothing to finish */ }
   const db = initializeFirestore(app, {
     // Keeps the schedule and speakers readable when hall Wi-Fi drops.
     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
@@ -65,12 +74,13 @@ export function createFirebaseBackend(): Backend {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       try {
-        await signInWithPopup(auth, provider);
+        await signInWithPopup(auth, provider, browserPopupRedirectResolver);
       } catch (e) {
         // Some phones and in-app browsers (WhatsApp, Instagram) block pop-ups: use a full-page redirect instead.
         const code = (e as { code?: string }).code;
         if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-          await signInWithRedirect(auth, provider);
+          try { sessionStorage.setItem(REDIRECT_KEY, '1'); } catch { /* storage blocked */ }
+          await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
           return;
         }
         throw e;
@@ -85,7 +95,7 @@ export function createFirebaseBackend(): Backend {
       catch (e) {
         // Firebase asks for a fresh sign-in before deleting an account.
         if ((e as { code?: string }).code !== 'auth/requires-recent-login') throw e;
-        await reauthenticateWithPopup(u, new GoogleAuthProvider());
+        await reauthenticateWithPopup(u, new GoogleAuthProvider(), browserPopupRedirectResolver);
         await deleteUser(u);
       }
     },

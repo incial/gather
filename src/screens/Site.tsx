@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DemoBanner, Icon, Logo } from '../components/ui';
-import { WARP_CAROUSEL_CARDS, WarpCarousel, type WarpCard } from '../components/ui/warp-carousel';
+import dynamic from 'next/dynamic';
+import { colourOf, photoOf } from '../lib/eventPhoto';
 import { getUpcomingEvents } from '../lib/upcoming';
 import { typeInfo } from '../lib/eventTypes';
-import { fmtDate, fmtTime, hue } from '../lib/format';
-import type { Accent, EventDoc } from '../lib/types';
+import { fmtDate, fmtTime } from '../lib/format';
+import type { EventDoc } from '../lib/types';
 
 const WORDS = ['Join', 'Explore', 'Check in', 'Connect', 'Give feedback'];
 
@@ -42,25 +43,35 @@ function WordWheel() {
   );
 }
 
+// The desktop 3D carousel is its own chunk, loaded only on wide screens (phones show the reel instead).
+const EventCarousel = dynamic(() => import('../components/EventCarousel'), {
+  ssr: false,
+  loading: () => <div className="hx-stage hx-loading" aria-hidden="true" />,
+});
+
 /* ---------- Upcoming events, readable without signing in (published events only) ---------- */
 
 function useUpcoming(max = 8, defer = false) {
   const [s, set] = useState<{ data: EventDoc[]; loading: boolean }>({ data: [], loading: true });
+  // Read once per visit: not again when sign-in finishes (which only changes `defer`).
+  const started = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     // A returning signed-in visitor is about to see their own Home: skip reading the events.
     if (defer && document.documentElement.hasAttribute('data-auth')) return;
-    let live = true;
+    if (started.current) return;
+    started.current = true;
     // Only events that haven't ended, read in end order (not 60 published events of any date).
     getUpcomingEvents(Math.max(24, max * 3))
       .then((all) => {
-        if (!live) return;
+        if (!mounted.current) return;
         const now = Date.now();
         const data = all.filter((e) => !e.deleted && !e.deleting && Date.parse(e.endsAt ?? e.startsAt) > now)
           .sort((a, b) => a.startsAt.localeCompare(b.startsAt)).slice(0, max);
         set({ data, loading: false });
       })
-      .catch(() => { if (live) set({ data: [], loading: false }); });
-    return () => { live = false; };
+      .catch(() => { if (mounted.current) set({ data: [], loading: false }); });
   }, [max, defer]);
   return s;
 }
@@ -77,81 +88,11 @@ function useWide(query = '(min-width: 760px)') {
   return wide;
 }
 
-/* ---------- Event → carousel card, in the event's own colour ---------- */
-
-const [W_BLUE, W_VIOLET, W_AMBER, W_ROSE] = WARP_CAROUSEL_CARDS;
-const LIME_MESH = ['#0b0f00', '#1d2600', '#3d5200', '#6f9400', '#a6d600', '#c8ff00', '#e6ff7a', '#c8ff00', '#7aa300', '#2b3a00'];
-const LOOK: Record<Accent, Pick<WarpCard, 'mesh' | 'numeral' | 'accent' | 'glow' | 'detail'>> = {
-  blue: { mesh: W_BLUE.mesh, numeral: W_BLUE.numeral, accent: W_BLUE.accent, glow: W_BLUE.glow, detail: 'ring' },
-  violet: { mesh: W_VIOLET.mesh, numeral: W_VIOLET.numeral, accent: W_VIOLET.accent, glow: W_VIOLET.glow, detail: 'wave' },
-  amber: { mesh: W_AMBER.mesh, numeral: W_AMBER.numeral, accent: W_AMBER.accent, glow: W_AMBER.glow, detail: 'ring' },
-  rose: { mesh: W_ROSE.mesh, numeral: W_ROSE.numeral, accent: W_ROSE.accent, glow: W_ROSE.glow, detail: 'wave' },
-  lime: { mesh: LIME_MESH, numeral: ['#f4ff9e', '#c8ff00'], accent: '#c8ff00', glow: '#b8e600', detail: 'ring' },
-};
-
-const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
-
-/** Splits a title over the card's two small lines, without breaking words. */
-function twoLines(title: string, n = 24) {
-  const words = title.trim().split(/\s+/);
-  let a = '';
-  while (words.length && (a + ' ' + words[0]).trim().length <= n) a = `${a} ${words.shift()}`.trim();
-  if (!a) a = cut(words.shift() ?? '', n);
-  return words.length ? `${a}\n${cut(words.join(' '), n)}` : a;
-}
-
-const colourOf = (e: EventDoc): Accent => e.color ?? hue(e.id);
-
-/** Stock photos (Unsplash) for events that have no banner of their own, by event type. */
-const UNSPLASH = (id: string) => `https://images.unsplash.com/photo-${id}?w=720&q=70&auto=format&fit=crop`;
-const STOCK: Record<string, string[]> = {
-  workshop: ['1522202176988-66273c2fd55f', '1556761175-b413da4baf72'],
-  conference: ['1540575467063-178a50c2df87', '1505373877841-8d25f7d46678'],
-  hackathon: ['1504384308090-c894fdcc538d', '1556761175-b413da4baf72'],
-  seminar: ['1475721027785-f74eccf877e2', '1511578314322-379afb476865'],
-  meetup: ['1515187029135-18ee286d815b', '1531058020387-3be344556be6'],
-  webinar: ['1517245386807-bb43f82c33c4', '1522202176988-66273c2fd55f'],
-  competition: ['1531058020387-3be344556be6', '1504384308090-c894fdcc538d'],
-  other: ['1505373877841-8d25f7d46678', '1540575467063-178a50c2df87', '1511578314322-379afb476865'],
-};
-/** The event's own banner if it has one, otherwise a fitting stock photo (stable per event). */
-function photoOf(e: EventDoc) {
-  if (e.bannerThumb) return e.bannerThumb;
-  const pool = STOCK[e.eventType ?? 'other'] ?? STOCK.other;
-  let h = 0;
-  for (const c of e.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return UNSPLASH(pool[h % pool.length]);
-}
-
-function toCard(e: EventDoc): WarpCard {
-  const d = new Date(e.startsAt);
-  const type = typeInfo(e.eventType)?.label;
-  return {
-    ...LOOK[colourOf(e)],
-    image: photoOf(e),
-    title: twoLines(e.title),
-    value: String(d.getDate()).padStart(2, '0'),
-    unit: d.toLocaleString('en-IN', { month: 'short' }),
-    footer: cut([type, e.venue].filter(Boolean).join(' · '), 34),
-  };
-}
-
-/** What the carousel shows when nothing is listed yet: what Gather does, in numbers. */
-const FEATURE_CARDS: WarpCard[] = [
-  { ...LOOK.blue, title: 'Join any event\nwith a code', value: '6', unit: 'digits', footer: 'Nothing to install' },
-  { ...LOOK.violet, title: 'Check-in code\nrefreshes every', value: '30', unit: 's', footer: 'Attendance stays honest' },
-  { ...LOOK.amber, title: 'Live polls\nanswered in', value: '1', unit: 'tap', footer: 'Right from your phone' },
-  { ...LOOK.rose, title: 'Feedback for\nevery session', value: '5', unit: 'stars', footer: 'Speakers see it live' },
-];
-
-const FONT = "'Geist Variable', system-ui, -apple-system, sans-serif";
-
 /* ---------- Showcase: 3D carousel on wide screens, a swipeable reel on phones ---------- */
 
 function Showcase({ events, loading }: { events: EventDoc[]; loading: boolean }) {
   const wide = useWide();
   const [i, setI] = useState(0);
-  const cards = useMemo(() => (events.length ? events.map(toCard) : FEATURE_CARDS), [events]);
   const front = events[i % Math.max(1, events.length)];
 
   if (loading) return <div className="hx-stage hx-loading" aria-hidden="true" />;
@@ -197,8 +138,7 @@ function Showcase({ events, loading }: { events: EventDoc[]; loading: boolean })
   return (
     <div className="hx-show">
       <div className="hx-stage">
-        <WarpCarousel cards={cards} background="#F6F6F4" font={FONT} step={1} interval={4.2} onIndexChange={setI}
-          ariaLabel={events.length ? 'Upcoming events' : 'What Gather does'} style={{ minHeight: 0, aspectRatio: 'auto' }} />
+        <EventCarousel events={events} onIndexChange={setI} />
       </div>
       {front ? (
         <div className="hx-caption" aria-live="polite">
