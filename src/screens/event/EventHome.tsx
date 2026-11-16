@@ -47,7 +47,7 @@ export function EventHome() {
   const toRate = sessions.filter((s) => canRate(s) && !rated.has(s.id)).length;
   const stamps = attendance.length + connections.length + (feedback ? 1 : 0);
   const total = sessions.length + speakers.length + 1;
-  const first = me.name.split(' ').find((w) => !/^(dr|prof|mr|ms|mrs)\.?$/i.test(w)) ?? me.name;
+  const first = (me.name ?? '').split(' ').find((w) => !/^(dr|prof|mr|ms|mrs)\.?$/i.test(w)) ?? me.name;
   const { user } = useAuth();
   // People I'm connected with here: accepted Meet Pings, both directions.
   const pings = useEventPings(event.id, me.uid);
@@ -62,7 +62,7 @@ export function EventHome() {
         {event.bannerThumb
           // eslint-disable-next-line @next/next/no-img-element
           ? <img className="ev-head-art" src={event.bannerThumb} alt="" />
-          : <span className="ev-head-art ev-head-blank" aria-hidden="true">{event.title.slice(0, 1)}</span>}
+          : <span className="ev-head-art ev-head-blank" aria-hidden="true">{(event.title ?? '').slice(0, 1)}</span>}
         <div className="ev-head-text">
           <span className="ev-head-kicker">{ended ? 'That’s a wrap' : started ? <><i className="live-dot" aria-hidden="true" /> We’re live</> : 'See you soon'}, {first}</span>
           <h1>{event.title}</h1>

@@ -162,7 +162,7 @@ function OrgEventCard({ e, phase }: { e: EventDoc; phase: Phase }) {
     <article className={`org-card a-${e.color}${gone ? ' is-deleted' : ''}`}>
       <Link href={`/admin/e/${e.id}`} className="org-card-cover" aria-label={`Manage ${e.title}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        {e.bannerThumb ? <img src={e.bannerThumb} alt="" /> : <span className="org-card-initial">{e.title.slice(0, 1)}</span>}
+        {e.bannerThumb ? <img src={e.bannerThumb} alt="" /> : <span className="org-card-initial">{(e.title ?? '').slice(0, 1)}</span>}
         <div className="org-pills">
           {phase === 'live' && <span className="pill pill-live"><Radio size={12} aria-hidden="true" /> Live</span>}
           {e.deleted ? <span className="pill pill-warn">Deleted</span> : <span className={`pill org-vis-${vis}`}>{VISIBILITY_LABEL[vis]}</span>}

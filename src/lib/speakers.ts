@@ -5,7 +5,7 @@ export const CATEGORIES: Record<SpeakerCategory, string> = { featured: 'Featured
 
 /** The organiser's order everywhere: pinned first, then manual order, then name. Never random. */
 export function sortSpeakers<T extends Pick<SpeakerDoc, 'name' | 'order' | 'pinned'>>(list: T[]): T[] {
-  return [...list].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (a.order ?? 1e6) - (b.order ?? 1e6) || a.name.localeCompare(b.name));
+  return [...list].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (a.order ?? 1e6) - (b.order ?? 1e6) || (a.name ?? '').localeCompare(b.name ?? ''));
 }
 
 /* ---------- Activation codes ---------- */

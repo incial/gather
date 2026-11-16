@@ -109,7 +109,7 @@ export function SpeakerDetail() {
             <div className="profile-meet"><MeetButton event={event} me={{ uid: me.uid, name: me.name || user?.name || '', photo: user?.photo ?? me.photo, role: myRole ? 'Speaker' : 'Attendee' }} other={{ uid: speaker.uid, name: speaker.name, photo: speaker.photo, role: 'Speaker' }} pings={pings} /></div>
           )}
           {!speaker.uid && (
-            <p className="meet-later">Meet Ping opens once {speaker.name.split(' ')[0]} signs in to Gather. Until then, scan their code or use Connect here.</p>
+            <p className="meet-later">Meet Ping opens once {(speaker.name ?? '').split(' ')[0] || 'they'} signs in to Gather. Until then, scan their code or use Connect here.</p>
           )}
           {connected
             ? (links.length > 0 || tray.length > 0) && <button className="btn btn-ink btn-block" onClick={() => downloadBlob(`${speaker.name}.vcf`, new Blob([vcard(speaker)], { type: 'text/vcard' }))}><Icon name="download" size={18} /> Save to contacts</button>

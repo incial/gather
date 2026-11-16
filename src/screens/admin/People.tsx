@@ -49,7 +49,7 @@ export function People() {
   const [q, setQ] = useState('');
   const [err, setErr] = useState('');
   const [listOpen, setListOpen] = useState(false);
-  const joinedEmails = useMemo(() => new Set(attendees.map((a) => a.email.toLowerCase())), [attendees]);
+  const joinedEmails = useMemo(() => new Set(attendees.map((a) => (a.email ?? '').toLowerCase())), [attendees]);
   const waiting = prereg.filter((p) => !joinedEmails.has(p.id));
   const shown = attendees.filter((a) => `${a.name} ${a.email} ${a.institution}`.toLowerCase().includes(q.toLowerCase()));
 

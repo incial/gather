@@ -58,7 +58,7 @@ export function SavedList({ user }: { user: AppUser }) {
             <li key={s.id} className={`saved-row a-${s.color}${gone ? ' is-gone' : ''}`}>
               <Link href={`/e/${s.id}`} className="saved-info">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {s.bannerThumb ? <img className="saved-poster" src={s.bannerThumb} alt="" loading="lazy" /> : <span className="saved-poster saved-poster-blank" aria-hidden="true">{s.title.slice(0, 1)}</span>}
+                {s.bannerThumb ? <img className="saved-poster" src={s.bannerThumb} alt="" loading="lazy" /> : <span className="saved-poster saved-poster-blank" aria-hidden="true">{(s.title ?? '').slice(0, 1)}</span>}
                 <span><b>{s.title}</b><small>{gone ? 'No longer available' : `${fmtRange(s.startsAt, s.endsAt)} · ${s.venue}`}</small></span>
               </Link>
               <div className="saved-actions">

@@ -27,7 +27,7 @@ export function attendeesSheet(d: EventData): Sheet {
     Designation: a.designation, Status: 'Joined', Source: a.source === 'list' ? 'Pre-registered' : 'Registered in app',
     'Joined at': fmtDateTime(a.joinedAt), 'Sessions attended': counts.get(a.uid) ?? 0,
   }));
-  const joined = new Set(d.attendees.map((a) => a.email.toLowerCase()));
+  const joined = new Set(d.attendees.map((a) => (a.email ?? '').toLowerCase()));
   for (const p of d.prereg) {
     if (joined.has(p.id)) continue;
     rows.push({ Name: p.name, Email: p.email, Phone: p.phone, Institution: p.institution, Department: p.department,

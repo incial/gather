@@ -21,13 +21,15 @@ export function toLocalInput(iso?: string) {
 }
 export const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : '');
 
-export const initials = (name: string) =>
-  name.replace(/^(dr|prof|mr|ms|mrs)\.?\s+/i, '').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
+// Both take `string | null | undefined`: some records (older ones, or people who never set a name) have no
+// name or id, and an avatar must never crash the whole screen because of that.
+export const initials = (name?: string | null) =>
+  String(name ?? '').trim().replace(/^(dr|prof|mr|ms|mrs)\.?\s+/i, '').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || '?';
 
-export function hue(id: string) {
+export function hue(id?: string | null) {
   const colors = ['blue', 'amber', 'violet', 'lime', 'rose'] as const;
   let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  for (const c of String(id ?? '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return colors[h % colors.length];
 }
 
